@@ -279,7 +279,7 @@ return new class extends Migration
             $table->string('description');
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
-            $table->index(['organization_id', 'billing_account_id', 'created_at']);
+            $table->index(['organization_id', 'billing_account_id', 'created_at'], 'bt_org_account_created_idx');
         });
 
         Schema::create('audit_logs', function (Blueprint $table) {

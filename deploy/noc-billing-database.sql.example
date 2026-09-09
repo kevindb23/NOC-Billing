@@ -1,0 +1,13 @@
+CREATE DATABASE IF NOT EXISTS noc_billing
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS 'noc_billing'@'localhost'
+  IDENTIFIED BY 'CHANGE_ME_DATABASE_PASSWORD';
+
+ALTER USER 'noc_billing'@'localhost'
+  IDENTIFIED BY 'CHANGE_ME_DATABASE_PASSWORD';
+
+GRANT ALL PRIVILEGES ON noc_billing.* TO 'noc_billing'@'localhost';
+FLUSH PRIVILEGES;
+
+EXIT;

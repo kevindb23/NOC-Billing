@@ -14,21 +14,15 @@ Network automation, FreeRADIUS, BNG, OLT/ONU, ACS, IPAM, and provisioning are in
 
 ## Local setup
 
-Create the MySQL database and application user first. Use a strong password and replace the example value everywhere below:
+Create the MySQL database and application user first. The repository includes [`deploy/noc-billing-database.sql.example`](deploy/noc-billing-database.sql.example). Create a local copy, replace the placeholder, and run it:
 
 ```bash
-sudo mysql
+cp /var/www/html/deploy/noc-billing-database.sql.example /var/www/html/deploy/noc-billing-database.sql
+sed -i "s/CHANGE_ME_DATABASE_PASSWORD/your-real-password/g" /var/www/html/deploy/noc-billing-database.sql
+sudo mysql < /var/www/html/deploy/noc-billing-database.sql
 ```
 
-```sql
-CREATE DATABASE noc_billing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'noc_billing'@'localhost' IDENTIFIED BY 'CHANGE_ME_DATABASE_PASSWORD';
-GRANT ALL PRIVILEGES ON noc_billing.* TO 'noc_billing'@'localhost';
-FLUSH PRIVILEGES;
-EXIT;
-```
-
-If the database or user already exists, update the password instead of rerunning `CREATE`:
+If the database or user already exists, the SQL file updates the password and privileges. The generated `.sql` file is ignored by Git because it contains credentials.
 
 ```sql
 ALTER USER 'noc_billing'@'localhost' IDENTIFIED BY 'your-real-password';

@@ -4,6 +4,17 @@ This application is designed for Nginx, PHP-FPM, MySQL 8, and Redis on a native 
 
 ## Build
 
+Provision the database before running migrations:
+
+```sql
+CREATE DATABASE noc_billing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'noc_billing'@'localhost' IDENTIFIED BY 'your-real-password';
+GRANT ALL PRIVILEGES ON noc_billing.* TO 'noc_billing'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+Set matching `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` values in `backend/.env`, then clear cached configuration.
+
 ```bash
 cd /var/www/html/frontend
 npm ci
@@ -11,6 +22,7 @@ npm run build
 
 cd /var/www/html/backend
 composer install --no-dev --optimize-autoloader
+php artisan config:clear
 php artisan migrate --force
 php artisan config:cache
 php artisan route:cache

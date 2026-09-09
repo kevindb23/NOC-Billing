@@ -14,14 +14,40 @@ Network automation, FreeRADIUS, BNG, OLT/ONU, ACS, IPAM, and provisioning are in
 
 ## Local setup
 
+Create the MySQL database and application user first. Use a strong password and replace the example value everywhere below:
+
+```bash
+sudo mysql
+```
+
+```sql
+CREATE DATABASE noc_billing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'noc_billing'@'localhost' IDENTIFIED BY 'CHANGE_ME_DATABASE_PASSWORD';
+GRANT ALL PRIVILEGES ON noc_billing.* TO 'noc_billing'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+If the database or user already exists, update the password instead of rerunning `CREATE`:
+
+```sql
+ALTER USER 'noc_billing'@'localhost' IDENTIFIED BY 'your-real-password';
+```
+
+Then configure Laravel:
+
 ```bash
 cd /var/www/html/backend
 cp .env.example .env
+# Replace CHANGE_ME_DATABASE_PASSWORD in .env with the MySQL user's real password
 composer install
 php artisan key:generate
+php artisan config:clear
 php artisan migrate --seed
 php artisan serve --host=127.0.0.1 --port=8000
 ```
+
+The `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`, and `DB_HOST` values in `.env` must match the MySQL account. If MySQL is on another host, use that host instead of `127.0.0.1`.
 
 In another terminal:
 
@@ -48,7 +74,7 @@ php artisan key:generate
 php artisan migrate --force
 ```
 
-Never commit passwords, tokens, private keys, or production `.env` files.
+Never commit passwords, tokens, private keys, or production `.env` files. `CHANGE_ME_DATABASE_PASSWORD` is only a placeholder and must be replaced before running migrations.
 
 ## Verification
 

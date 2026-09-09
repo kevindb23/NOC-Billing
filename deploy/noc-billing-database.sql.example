@@ -9,5 +9,3 @@ ALTER USER 'noc_billing'@'localhost'
 
 GRANT ALL PRIVILEGES ON noc_billing.* TO 'noc_billing'@'localhost';
 FLUSH PRIVILEGES;
-
-EXIT;

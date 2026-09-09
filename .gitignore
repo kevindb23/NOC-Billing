@@ -1,0 +1,36 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+credentials.json
+secrets/
+
+# PHP / Laravel
+backend/vendor/
+backend/storage/*.key
+backend/storage/app/*
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/logs/*
+backend/bootstrap/cache/*
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+
+# Runtime / editor / OS
+*.log
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local generated artifacts
+create-db-diagram.js
+isp-billing-database-diagram.*

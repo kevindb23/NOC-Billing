@@ -125,17 +125,17 @@
   box-shadow: 0 8px 18px -16px rgb(24 35 54 / 38%);
 }
 
+/* Keep page headings with supporting copy aligned to the single-line record headings. */
+.billing-page-heading > div:has(> p) {
+  transform: translateY(0.55rem);
+}
+
 .dashboard-grid {
   padding-top: 0.75rem;
 }
 
 /* Keep every record page on the same vertical rhythm as the dashboard. */
 .billing-content > .flex.flex-col.gap-5 {
-  gap: 0.75rem;
-}
-
-/* Keep administration pages on the same compact page rhythm as the other record pages. */
-.billing-content > .flex.flex-col.gap-4 {
   gap: 0.75rem;
 }
 

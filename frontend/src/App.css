@@ -127,7 +127,11 @@
 
 /* Keep page headings with supporting copy aligned to the single-line record headings. */
 .billing-page-heading > div:has(> p) {
-  transform: translateY(0.55rem);
+  display: contents;
+}
+
+.billing-page-heading > div:has(> p) > p {
+  display: none;
 }
 
 .dashboard-grid {

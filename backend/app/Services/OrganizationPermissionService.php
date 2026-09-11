@@ -15,6 +15,13 @@ class OrganizationPermissionService
 
     public function permissionsFor(User $user, Organization $organization): Collection
     {
+        if (! $user->organizations()
+            ->whereKey($organization->getKey())
+            ->wherePivot('status', 'active')
+            ->exists()) {
+            return collect();
+        }
+
         return $user->rolesForOrganization($organization)
             ->with('permissions')
             ->get()

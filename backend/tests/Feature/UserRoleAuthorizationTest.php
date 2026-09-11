@@ -22,6 +22,7 @@ class UserRoleAuthorizationTest extends TestCase
         $role = Role::create(['organization_id' => $organization->id, 'name' => 'Billing clerk']);
         $permission = Permission::create(['name' => 'billing.invoices.view']);
 
+        $organization->users()->attach($user, ['is_default' => true, 'status' => 'active']);
         $role->permissions()->attach($permission);
         $role->users()->attach($user, ['organization_id' => $organization->id]);
 
@@ -56,6 +57,33 @@ class UserRoleAuthorizationTest extends TestCase
         $this->assertFalse(app(OrganizationPermissionService::class)->userCan($user, $organization, 'does-not-exist'));
     }
 
+    public function test_user_without_an_organization_membership_cannot_use_an_assigned_role(): void
+    {
+        $organization = Organization::factory()->create();
+        $user = User::factory()->create();
+        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Unattached role']);
+        $permission = Permission::create(['name' => 'billing.invoices.view']);
+
+        $role->permissions()->attach($permission);
+        $role->users()->attach($user, ['organization_id' => $organization->id]);
+
+        $this->assertFalse(app(OrganizationPermissionService::class)->userCan($user, $organization, 'billing.invoices.view'));
+    }
+
+    public function test_user_with_an_inactive_organization_membership_cannot_use_an_assigned_role(): void
+    {
+        $organization = Organization::factory()->create();
+        $user = User::factory()->create();
+        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Inactive member role']);
+        $permission = Permission::create(['name' => 'billing.invoices.view']);
+
+        $organization->users()->attach($user, ['is_default' => false, 'status' => 'suspended']);
+        $role->permissions()->attach($permission);
+        $role->users()->attach($user, ['organization_id' => $organization->id]);
+
+        $this->assertFalse(app(OrganizationPermissionService::class)->userCan($user, $organization, 'billing.invoices.view'));
+    }
+
     public function test_role_permission_lookup_uses_the_role_permissions_pivot(): void
     {
         $role = Role::create(['name' => 'Auditor']);
@@ -75,14 +103,40 @@ class UserRoleAuthorizationTest extends TestCase
         $firstRun = Permission::query()->orderBy('name')->pluck('name')->all();
         $seeder->run();
 
+        $expected = [
+            'audit-logs.export',
+            'audit-logs.view',
+            'billing.create',
+            'billing.delete',
+            'billing.export',
+            'billing.update',
+            'billing.view',
+            'dashboard.export',
+            'dashboard.view',
+            'network.create',
+            'network.delete',
+            'network.export',
+            'network.update',
+            'network.view',
+            'roles.create',
+            'roles.delete',
+            'roles.export',
+            'roles.update',
+            'roles.view',
+            'system.create',
+            'system.delete',
+            'system.export',
+            'system.update',
+            'system.view',
+            'users.create',
+            'users.delete',
+            'users.export',
+            'users.update',
+            'users.view',
+        ];
+
+        $this->assertSame($expected, $firstRun);
         $this->assertSame($firstRun, Permission::query()->orderBy('name')->pluck('name')->all());
         $this->assertSame(count($firstRun), Permission::count());
-        $this->assertContains('users.*', $firstRun);
-        $this->assertContains('roles.*', $firstRun);
-        $this->assertContains('audit-logs.view', $firstRun);
-        $this->assertContains('dashboard.view', $firstRun);
-        $this->assertContains('billing.view', $firstRun);
-        $this->assertContains('network.view', $firstRun);
-        $this->assertContains('system.view', $firstRun);
     }
 }

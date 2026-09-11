@@ -35,3 +35,9 @@ Thumbs.db
 # Local generated artifacts
 create-db-diagram.js
 isp-billing-database-diagram.*
+
+# Local agent instructions and project planning materials
+.agents/
+.superpowers/
+docs/
+MASTER.md

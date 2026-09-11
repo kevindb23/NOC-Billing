@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented the Users/Roles administration UI plus Round 1 integration fixes, Round 2 CRUD interaction polish, and Round 3 loading decoupling in the isolated `users-roles` worktree.
+Implemented the Users/Roles administration UI plus Round 1 integration fixes, Round 2 CRUD interaction polish, Round 3 loading decoupling, and final fail-closed permission gating in the isolated `users-roles` worktree.
 
 ## Delivered
 
@@ -20,14 +20,15 @@ Implemented the Users/Roles administration UI plus Round 1 integration fixes, Ro
 - Global roles are rendered read-only in organization scope; edit and delete actions are omitted.
 - Added focused regression coverage for edit-form hydration and user/role create/edit endpoint payloads.
 - UsersPage now loads the Users table independently from optional role options; users.view-only operators do not request roles and receive an empty role-option list.
+- Permission checks now fail closed when permission state is undefined; Users/Roles navigation and actions remain hidden until permissions are loaded and explicitly grant access.
 - Restored missing existing frontend dependencies required by the committed app and stylesheet: Base UI, Phosphor icons, class variance utilities, `cn`, Poppins, and JetBrains Mono font packages.
 
 ## Verification
 
-- `npm test` — 6 test files, 20 tests passed.
+- `npm test` — 6 test files, 23 tests passed.
 - `npm run lint` — passed with warning-level output only; remaining warnings include existing fast-refresh warnings and the state-in-effect warnings required by modal rehydration/data loading.
 - `npm run build` — passed (`tsc -b` and Vite production build).
-- `php artisan test` — 45 tests, 244 assertions passed.
+- `php artisan test` — 49 tests, 294 assertions passed.
 - `git diff --check` — passed.
 
 ## Concerns

@@ -35,7 +35,7 @@ export type UserRequest = { name: string; email: string; password?: string; stat
 export type RoleRequest = { name: string; permission_ids?: number[] }
 
 export function hasPermission(permissions: string[] | undefined, permission: string) {
-  return permissions === undefined || permissions.includes(permission)
+  return permissions !== undefined && permissions.includes(permission)
 }
 
 export function listUsers(token?: string, page = 1, search = '', status: 'all' | 'active' | 'inactive' = 'all') {

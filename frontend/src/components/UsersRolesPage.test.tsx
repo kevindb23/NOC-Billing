@@ -19,7 +19,7 @@ vi.mock('@/lib/usersRoles', () => ({
   listRoles: vi.fn(),
   listPermissions: vi.fn(),
   getRole: vi.fn(),
-  hasPermission: (permissions: string[] | undefined, permission: string) => permissions === undefined || permissions.includes(permission),
+  hasPermission: (permissions: string[] | undefined, permission: string) => permissions !== undefined && permissions.includes(permission),
   createRole: vi.fn(),
   updateRole: vi.fn(),
   deleteRole: vi.fn(),
@@ -48,6 +48,12 @@ describe('users and roles administration', () => {
     await actualUsersRoles.reactivateUser('usr_1', 'token')
     expect(permissions.data[0].permissions[0].id).toBe(7)
     expect(fetch).toHaveBeenLastCalledWith('/api/v1/users/usr_1', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ status: 'active' }) }))
+  })
+
+  it('fails closed when the permission set is undefined', () => {
+    expect(actualUsersRoles.hasPermission(undefined, 'users.view')).toBe(false)
+    expect(actualUsersRoles.hasPermission([], 'users.view')).toBe(false)
+    expect(actualUsersRoles.hasPermission(['users.view'], 'users.view')).toBe(true)
   })
 
   it('hydrates the user edit form whenever the record changes', () => {
@@ -99,11 +105,11 @@ describe('users and roles administration', () => {
 
   it('renders user empty and error states', async () => {
     mockedUsers.listUsers.mockResolvedValueOnce({ data: { data: [], current_page: 1, last_page: 1, total: 0 } })
-    const { unmount } = render(<UsersPage token="token" />)
+    const { unmount } = render(<UsersPage token="token" permissions={['users.view']} />)
     expect(await screen.findByText('No users found.')).toBeTruthy()
     unmount()
     mockedUsers.listUsers.mockRejectedValueOnce(new Error('Users unavailable'))
-    render(<UsersPage token="token" />)
+    render(<UsersPage token="token" permissions={['users.view']} />)
     expect(await screen.findByText('Users unavailable')).toBeTruthy()
   })
 
@@ -127,7 +133,7 @@ describe('users and roles administration', () => {
   it('loads roles and permissions and exposes role creation', async () => {
     mockedUsers.listRoles.mockResolvedValue({ data: { data: [], current_page: 1, last_page: 1, total: 0 } })
     mockedUsers.listPermissions.mockResolvedValue({ data: [{ group: 'System', permissions: [{ id: 1, name: 'users.view', action: 'view' }] }] })
-    render(<RolesPage token="token" />)
+    render(<RolesPage token="token" permissions={['roles.view', 'roles.create']} />)
     expect(await screen.findByText('No roles found.')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /new role/i }))
     expect(screen.getByRole('dialog')).toBeTruthy()

@@ -40,6 +40,7 @@ class UserRoleAuthorizationTest extends TestCase
         $role = Role::create(['organization_id' => $otherOrganization->id, 'name' => 'Other organization role']);
         $permission = Permission::create(['name' => 'billing.invoices.view']);
 
+        $organization->users()->attach($user, ['is_default' => true, 'status' => 'active']);
         $role->permissions()->attach($permission);
         $role->users()->attach($user, ['organization_id' => $otherOrganization->id]);
 
@@ -112,7 +113,10 @@ class UserRoleAuthorizationTest extends TestCase
             'billing.export',
             'billing.update',
             'billing.view',
+            'dashboard.create',
+            'dashboard.delete',
             'dashboard.export',
+            'dashboard.update',
             'dashboard.view',
             'network.create',
             'network.delete',

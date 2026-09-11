@@ -44,7 +44,7 @@ class UserController extends Controller
         $validated = $request->validated();
         $roleIds = $validated['role_ids'] ?? [];
         $membershipStatus = $validated['status'] ?? 'active';
-        unset($validated['role_ids']);
+        unset($validated['role_ids'], $validated['status']);
 
         $user = DB::transaction(function () use ($request, $organization, $validated, $roleIds, $membershipStatus): User {
             $user = User::create($validated);
@@ -81,27 +81,28 @@ class UserController extends Controller
         $rolesProvided = array_key_exists('role_ids', $validated);
         $roleIds = $validated['role_ids'] ?? [];
         $statusProvided = array_key_exists('status', $validated);
-        unset($validated['role_ids']);
+        $membershipStatus = $validated['status'] ?? $user->pivot->status;
+        unset($validated['role_ids'], $validated['status']);
 
-        $user = DB::transaction(function () use ($request, $organization, $user, $validated, $rolesProvided, $roleIds, $oldSnapshot, $statusProvided): User {
+        $user = DB::transaction(function () use ($request, $organization, $user, $validated, $rolesProvided, $roleIds, $oldSnapshot, $statusProvided, $membershipStatus): User {
             $currentRoleIds = $this->roleIds($user, $organization);
             $newRoleIds = $rolesProvided ? $roleIds : $currentRoleIds;
-            $status = $validated['status'] ?? $user->status;
-            $this->ensureAdministratorProtection($organization, $user, $newRoleIds, $status === 'inactive');
+            $this->ensureAdministratorProtection($organization, $user, $newRoleIds, $membershipStatus === 'inactive');
             $user->update($validated);
             if ($rolesProvided) {
                 $this->syncRoles($user, $organization, $newRoleIds);
             }
             if ($statusProvided) {
-                $organization->users()->updateExistingPivot($user->id, ['status' => $user->status]);
+                $organization->users()->updateExistingPivot($user->id, ['status' => $membershipStatus]);
             }
             $freshUser = $this->organizationUser($organization, $user->public_id, true);
             $newSnapshot = $this->snapshot($freshUser, $organization);
-            $auditAction = $statusProvided
-                && $newSnapshot['status'] === 'active'
-                && ($oldSnapshot['status'] !== 'active' || $oldSnapshot['membership_status'] !== 'active')
-                ? 'user.activated'
-                : 'user.updated';
+            $auditAction = 'user.updated';
+            if ($statusProvided && $oldSnapshot['membership_status'] !== 'inactive' && $newSnapshot['membership_status'] === 'inactive') {
+                $auditAction = 'user.deactivated';
+            } elseif ($statusProvided && $oldSnapshot['membership_status'] !== 'active' && $newSnapshot['membership_status'] === 'active') {
+                $auditAction = 'user.activated';
+            }
             $this->auditLogger->record($request, $auditAction, $user, $oldSnapshot, $newSnapshot);
             if ($rolesProvided && $currentRoleIds !== $newRoleIds) {
                 $this->auditLogger->record($request, 'user.roles_updated', $user, ['roles' => $oldSnapshot['roles']], ['roles' => $newSnapshot['roles']]);
@@ -121,7 +122,6 @@ class UserController extends Controller
         $user = DB::transaction(function () use ($request, $organization, $user): User {
             $this->ensureAdministratorProtection($organization, $user, $this->roleIds($user, $organization), true);
             $oldSnapshot = $this->snapshot($user, $organization);
-            $user->update(['status' => 'inactive']);
             $organization->users()->updateExistingPivot($user->id, ['status' => 'inactive']);
             $freshUser = $this->organizationUser($organization, $user->public_id, true);
             $this->auditLogger->record($request, 'user.deactivated', $user, $oldSnapshot, $this->snapshot($freshUser, $organization));

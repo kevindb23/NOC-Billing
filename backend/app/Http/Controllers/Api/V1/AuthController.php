@@ -17,9 +17,14 @@ class AuthController extends Controller
         $credentials = $request->validate(['email' => ['required', 'email'], 'password' => ['required', 'string']]);
         $user = \App\Models\User::where('email', $credentials['email'])->where('status', 'active')->first();
         abort_unless($user && Hash::check($credentials['password'], $user->password), 422, 'The provided credentials are invalid.');
-        $organization = $user->organizations()->wherePivot('status', 'active')->orderByDesc('organization_user.is_default')->first();
+        $organization = $user->organizations()
+            ->wherePivot('status', 'active')
+            ->when($request->header('X-Organization-Id'), fn ($query, string $organizationId) => $query->where('organizations.public_id', $organizationId))
+            ->orderByDesc('organization_user.is_default')
+            ->first();
         abort_unless($organization, 403, 'The user has no active organization membership.');
         $token = $user->createToken('billing-portal')->plainTextToken;
+
         return response()->json(['data' => [
             'token' => $token,
             'user' => $user,
@@ -31,6 +36,7 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         $organization = $request->attributes->get('organization');
+
         return response()->json(['data' => [
             'user' => $request->user(),
             'organization' => $organization,
@@ -41,6 +47,7 @@ class AuthController extends Controller
     public function logout(Request $request): JsonResponse
     {
         $request->user()?->currentAccessToken()?->delete();
+
         return response()->json(['data' => ['message' => 'Signed out.']]);
     }
 }

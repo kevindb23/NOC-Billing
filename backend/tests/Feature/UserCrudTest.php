@@ -100,13 +100,16 @@ class UserCrudTest extends TestCase
             'status' => 'inactive',
         ]);
 
-        $response->assertCreated()->assertJsonPath('data.status', 'inactive')->assertJsonPath('data.membership_status', 'inactive');
+        $response->assertCreated()->assertJsonPath('data.status', 'active')->assertJsonPath('data.membership_status', 'inactive');
         $user = User::where('email', 'inactive-user@example.com')->firstOrFail();
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'status' => 'active']);
         $this->assertDatabaseHas('organization_user', ['organization_id' => $organization->id, 'user_id' => $user->id, 'status' => 'inactive']);
         $createdAudit = AuditLog::where('auditable_id', $user->id)->where('action', 'user.created')->firstOrFail();
-        $this->assertSame('inactive', $createdAudit->new_values['status']);
+        $this->assertSame('active', $createdAudit->new_values['status']);
         $this->assertSame('inactive', $createdAudit->new_values['membership_status']);
-        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'secret-password'])->assertUnprocessable();
+        $this->withHeader('X-Organization-Id', $organization->public_id)
+            ->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'secret-password'])
+            ->assertForbidden();
     }
 
     public function test_user_status_put_synchronizes_membership_status_and_audits_each_transition(): void
@@ -117,20 +120,20 @@ class UserCrudTest extends TestCase
         Sanctum::actingAs($actor);
 
         $this->organizationRequest($organization)->putJson('/api/v1/users/'.$user->public_id, ['status' => 'inactive'])
-            ->assertOk()->assertJsonPath('data.status', 'inactive')->assertJsonPath('data.membership_status', 'inactive');
+            ->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.membership_status', 'inactive');
         $this->assertDatabaseHas('organization_user', ['organization_id' => $organization->id, 'user_id' => $user->id, 'status' => 'inactive']);
-        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])->assertUnprocessable();
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'status' => 'active']);
 
         $this->organizationRequest($organization)->putJson('/api/v1/users/'.$user->public_id, ['status' => 'active'])
             ->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.membership_status', 'active');
         $this->assertDatabaseHas('organization_user', ['organization_id' => $organization->id, 'user_id' => $user->id, 'status' => 'active']);
         $audits = AuditLog::where('auditable_id', $user->id)->orderBy('id')->get();
-        $this->assertSame(['user.updated', 'user.activated'], $audits->pluck('action')->all());
+        $this->assertSame(['user.deactivated', 'user.activated'], $audits->pluck('action')->all());
         $this->assertSame('active', $audits[0]->old_values['status']);
-        $this->assertSame('inactive', $audits[0]->new_values['status']);
+        $this->assertSame('active', $audits[0]->new_values['status']);
         $this->assertSame('active', $audits[0]->old_values['membership_status']);
         $this->assertSame('inactive', $audits[0]->new_values['membership_status']);
-        $this->assertSame('inactive', $audits[1]->old_values['status']);
+        $this->assertSame('active', $audits[1]->old_values['status']);
         $this->assertSame('active', $audits[1]->new_values['status']);
         $this->assertSame('inactive', $audits[1]->old_values['membership_status']);
         $this->assertSame('active', $audits[1]->new_values['membership_status']);
@@ -192,24 +195,51 @@ class UserCrudTest extends TestCase
         $response = $this->organizationRequest($organization)->deleteJson('/api/v1/users/'.$user->public_id);
 
         $response->assertOk()->assertJsonPath('data.membership_status', 'inactive');
-        $this->assertDatabaseHas('users', ['id' => $user->id, 'status' => 'inactive']);
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'status' => 'active']);
         $this->assertDatabaseHas('organization_user', ['organization_id' => $organization->id, 'user_id' => $user->id, 'status' => 'inactive']);
         $this->assertAuditActions(['user.deactivated'], $user);
         $audit = AuditLog::where('auditable_id', $user->id)->firstOrFail();
         $this->assertSame($actor->id, $audit->actor_user_id);
         $this->assertSame($organization->id, $audit->organization_id);
         $this->assertSame('active', $audit->old_values['status']);
-        $this->assertSame('inactive', $audit->new_values['status']);
+        $this->assertSame('active', $audit->new_values['status']);
         $this->assertSame('active', $audit->old_values['membership_status']);
         $this->assertSame('inactive', $audit->new_values['membership_status']);
         $this->assertAuditSecretsAbsent($user);
         $this->assertAuditTokensAbsent($user);
     }
 
+    public function test_deactivating_one_organization_membership_preserves_other_access_and_scopes_login(): void
+    {
+        [$actor, $organization] = $this->actorWithPermission('users.delete');
+        $otherOrganization = Organization::factory()->create();
+        $user = User::factory()->create(['password' => Hash::make('password'), 'status' => 'active']);
+        $organization->users()->attach($user, ['status' => 'active']);
+        $otherOrganization->users()->attach($user, ['status' => 'active']);
+        Sanctum::actingAs($actor);
+
+        $response = $this->organizationRequest($organization)->deleteJson('/api/v1/users/'.$user->public_id);
+
+        $response->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.membership_status', 'inactive');
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'status' => 'active']);
+        $this->assertDatabaseHas('organization_user', ['organization_id' => $organization->id, 'user_id' => $user->id, 'status' => 'inactive']);
+        $this->assertDatabaseHas('organization_user', ['organization_id' => $otherOrganization->id, 'user_id' => $user->id, 'status' => 'active']);
+        $audit = AuditLog::where('auditable_id', $user->id)->where('action', 'user.deactivated')->firstOrFail();
+        $this->assertSame($actor->id, $audit->actor_user_id);
+        $this->assertSame($organization->id, $audit->organization_id);
+
+        $this->withHeader('X-Organization-Id', $organization->public_id)
+            ->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])
+            ->assertForbidden();
+        $this->withHeader('X-Organization-Id', $otherOrganization->public_id)
+            ->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])
+            ->assertOk()->assertJsonPath('data.organization.public_id', $otherOrganization->public_id);
+    }
+
     public function test_status_activation_emits_user_activated_instead_of_user_updated(): void
     {
         [$actor, $organization] = $this->actorWithPermission('users.update');
-        $user = User::factory()->create(['status' => 'inactive']);
+        $user = User::factory()->create(['status' => 'active']);
         $organization->users()->attach($user, ['status' => 'inactive']);
         Sanctum::actingAs($actor);
 
@@ -221,7 +251,7 @@ class UserCrudTest extends TestCase
         $audit = $audits->first();
         $this->assertSame($actor->id, $audit->actor_user_id);
         $this->assertSame($organization->id, $audit->organization_id);
-        $this->assertSame('inactive', $audit->old_values['status']);
+        $this->assertSame('active', $audit->old_values['status']);
         $this->assertSame('active', $audit->new_values['status']);
         $this->assertSame('inactive', $audit->old_values['membership_status']);
         $this->assertSame('active', $audit->new_values['membership_status']);

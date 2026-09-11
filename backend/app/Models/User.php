@@ -55,4 +55,20 @@ class User extends Authenticatable
     {
         return $this->belongsToMany(Organization::class)->withPivot(['is_default', 'status'])->withTimestamps();
     }
+
+    public function membershipForOrganization(Organization $organization)
+    {
+        return $this->organizations()->whereKey($organization->id)->first()?->pivot;
+    }
+
+    public function rolesForOrganization(Organization $organization)
+    {
+        return $this->belongsToMany(Role::class, 'role_assignments')
+            ->withPivot('organization_id')
+            ->wherePivot('organization_id', $organization->id)
+            ->where(function ($query) use ($organization): void {
+                $query->where('roles.organization_id', $organization->id)
+                    ->orWhereNull('roles.organization_id');
+            });
+    }
 }

@@ -13,6 +13,7 @@ class Organization extends Model
     protected $fillable = ['name', 'slug', 'status', 'timezone', 'default_currency'];
 
     public function users() { return $this->belongsToMany(User::class)->withPivot(['is_default', 'status'])->withTimestamps(); }
+    public function roles() { return $this->hasMany(Role::class); }
     public function customers() { return $this->hasMany(Customer::class); }
     public function billingAccounts() { return $this->hasMany(BillingAccount::class); }
     public function plans() { return $this->hasMany(Plan::class); }

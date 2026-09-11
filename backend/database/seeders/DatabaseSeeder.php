@@ -14,6 +14,8 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        $this->call(PermissionSeeder::class);
+
         $organization = Organization::firstOrCreate(['slug' => env('SEED_ORGANIZATION_SLUG', 'demo-isp')], [
             'name' => env('SEED_ORGANIZATION_NAME', 'Demo ISP'), 'status' => 'active', 'timezone' => 'Asia/Manila', 'default_currency' => 'PHP',
         ]);

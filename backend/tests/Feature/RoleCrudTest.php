@@ -8,6 +8,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -33,6 +34,28 @@ class RoleCrudTest extends TestCase
         $response->assertOk()
             ->assertJsonFragment(['name' => 'Visible', 'assignment_count' => 1, 'permission_count' => 1]);
         $this->assertNotContains('Hidden', collect($response->json('data'))->pluck('name')->all());
+    }
+
+    public function test_role_list_is_paginated_and_includes_organization_and_global_scopes(): void
+    {
+        [$actor, $organization] = $this->actorWithPermission('roles.view');
+        $organizationRole = Role::create(['organization_id' => $organization->id, 'name' => 'Organization role']);
+        $globalRole = Role::create(['organization_id' => null, 'name' => 'Global role']);
+        $globalRole->users()->attach($actor, ['organization_id' => $organization->id]);
+        Sanctum::actingAs($actor);
+
+        $response = $this->organizationRequest($organization)->getJson('/api/v1/roles?per_page=2');
+
+        $response->assertOk()
+            ->assertJsonPath('data.current_page', 1)
+            ->assertJsonPath('data.per_page', 2)
+            ->assertJsonPath('data.total', 3);
+        $roles = collect($response->json('data.data'))->keyBy('name');
+        $this->assertSame('organization', $roles->get('Organization role')['scope']);
+        $this->assertSame('global', $roles->get('Global role')['scope']);
+        $this->assertSame(1, $roles->get('Global role')['assignment_count']);
+        $this->assertSame(0, $roles->get('Global role')['permission_count']);
+        $this->assertNotNull($organizationRole->id);
     }
 
     public function test_role_can_be_created_with_permissions_transactionally_and_audited(): void
@@ -124,6 +147,50 @@ class RoleCrudTest extends TestCase
         $this->assertDatabaseHas('roles', ['id' => $global->id, 'name' => 'Global']);
     }
 
+    public function test_foreign_role_detail_and_mutation_are_not_found(): void
+    {
+        [$actor, $organization] = $this->actorWithPermissions(['roles.view', 'roles.update']);
+        $otherOrganization = Organization::factory()->create();
+        $foreign = Role::create(['organization_id' => $otherOrganization->id, 'name' => 'Foreign']);
+        Sanctum::actingAs($actor);
+
+        $this->organizationRequest($organization)->getJson('/api/v1/roles/'.$foreign->id)->assertNotFound();
+        $this->organizationRequest($organization)->putJson('/api/v1/roles/'.$foreign->id, ['name' => 'Changed'])
+            ->assertNotFound();
+        $this->assertDatabaseHas('roles', ['id' => $foreign->id, 'name' => 'Foreign']);
+    }
+
+    public function test_global_roles_cannot_be_deleted_through_an_organization_request(): void
+    {
+        [$actor, $organization] = $this->actorWithPermission('roles.delete');
+        $global = Role::create(['organization_id' => null, 'name' => 'Global']);
+        Sanctum::actingAs($actor);
+
+        $this->organizationRequest($organization)->deleteJson('/api/v1/roles/'.$global->id)
+            ->assertStatus(422);
+        $this->assertDatabaseHas('roles', ['id' => $global->id, 'name' => 'Global']);
+    }
+
+    public function test_role_creation_rolls_back_when_permission_sync_fails(): void
+    {
+        [$actor, $organization] = $this->actorWithPermission('roles.create');
+        $permission = Permission::create(['name' => 'billing.view']);
+        DB::statement("CREATE TRIGGER fail_role_permission_insert BEFORE INSERT ON role_permissions BEGIN SELECT RAISE(ABORT, 'forced permission sync failure'); END");
+        Sanctum::actingAs($actor);
+
+        try {
+            $this->organizationRequest($organization)->postJson('/api/v1/roles', [
+                'name' => 'Rolled back',
+                'permission_ids' => [$permission->id],
+            ])->assertServerError();
+        } finally {
+            DB::statement('DROP TRIGGER fail_role_permission_insert');
+        }
+
+        $this->assertDatabaseMissing('roles', ['organization_id' => $organization->id, 'name' => 'Rolled back']);
+        $this->assertDatabaseMissing('audit_logs', ['action' => 'role.created']);
+    }
+
     public function test_role_crud_requires_the_matching_permission(): void
     {
         [$actor, $organization] = $this->actorWithPermission('users.view');
@@ -156,12 +223,18 @@ class RoleCrudTest extends TestCase
 
     private function actorWithPermission(string $permissionName): array
     {
+        return $this->actorWithPermissions([$permissionName]);
+    }
+
+    private function actorWithPermissions(array $permissionNames): array
+    {
         $organization = Organization::factory()->create();
         $actor = User::factory()->create();
         $role = Role::create(['organization_id' => $organization->id, 'name' => 'Permission holder']);
-        $permission = Permission::create(['name' => $permissionName]);
         $organization->users()->attach($actor, ['is_default' => true, 'status' => 'active']);
-        $role->permissions()->attach($permission);
+        foreach ($permissionNames as $permissionName) {
+            $role->permissions()->attach(Permission::create(['name' => $permissionName]));
+        }
         $role->users()->attach($actor, ['organization_id' => $organization->id]);
 
         return [$actor, $organization];

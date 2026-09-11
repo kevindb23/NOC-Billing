@@ -8,6 +8,7 @@ use App\Http\Requests\UpdateRoleRequest;
 use App\Models\Organization;
 use App\Models\Role;
 use App\Services\AuditLogger;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,15 +22,10 @@ class RoleController extends Controller
     public function index(Request $request): JsonResponse
     {
         $organization = $this->organization($request);
-        $roles = $organization->roles()
-            ->withCount([
-                'users as assignment_count' => fn ($query) => $query->where('role_assignments.organization_id', $organization->id),
-                'permissions as permission_count',
-            ])
+        $roles = $this->rolesQuery($organization)
             ->orderBy('name')
-            ->get()
-            ->map(fn (Role $role): array => $this->resource($role, false))
-            ->values();
+            ->paginate($request->integer('per_page', 20));
+        $roles->through(fn (Role $role): array => $this->resource($role, false));
 
         return response()->json(['data' => $roles]);
     }
@@ -55,7 +51,9 @@ class RoleController extends Controller
 
     public function show(Request $request, int $id): JsonResponse
     {
-        $role = $this->organization($request)->roles()->with('permissions')->findOrFail($id);
+        $role = $this->rolesQuery($this->organization($request))
+            ->with('permissions')
+            ->findOrFail($id);
 
         return response()->json(['data' => $this->resource($role, true)]);
     }
@@ -118,9 +116,22 @@ class RoleController extends Controller
     private function organizationRole(Organization $organization, int $id): Role
     {
         $role = Role::findOrFail($id);
-        abort_if($role->organization_id !== $organization->id, Response::HTTP_UNPROCESSABLE_ENTITY, 'Global roles cannot be mutated through an organization request.');
+        abort_if($role->organization_id === null, Response::HTTP_UNPROCESSABLE_ENTITY, 'Global roles cannot be mutated through an organization request.');
+        abort_unless($role->organization_id === $organization->id, Response::HTTP_NOT_FOUND);
 
         return $role;
+    }
+
+    private function rolesQuery(Organization $organization): Builder
+    {
+        return Role::query()
+            ->where(function (Builder $query) use ($organization): void {
+                $query->where('organization_id', $organization->id)->orWhereNull('organization_id');
+            })
+            ->withCount([
+                'users as assignment_count' => fn ($query) => $query->where('role_assignments.organization_id', $organization->id),
+                'permissions as permission_count',
+            ]);
     }
 
     private function resource(Role $role, bool $includePermissions): array
@@ -129,6 +140,7 @@ class RoleController extends Controller
             'id' => $role->id,
             'name' => $role->name,
             'organization_id' => $role->organization_id,
+            'scope' => $role->organization_id === null ? 'global' : 'organization',
             'assignment_count' => $role->assignment_count ?? null,
             'permission_count' => $role->permission_count ?? null,
         ];

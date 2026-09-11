@@ -1,8 +1,10 @@
 # Task 2 Report
 
-Status: complete
+Status: complete; round 1 corrected
 
-Implemented the `permission` middleware alias and organization-scoped permission authorization using `OrganizationPermissionService` and the resolved organization. Added `GET /api/v1/permissions`, returning the seeded catalog grouped by resource with deterministic permission/action ordering.
+Implemented the `permission` middleware alias and organization-scoped permission authorization using `OrganizationPermissionService` and the resolved organization. Added `GET /api/v1/permissions`, returning exactly four authority groups in Dashboard, Billing, Network, System order. Dashboard, Billing, and Network retain their prefixes; `system.*`, `users.*`, `roles.*`, and `audit-logs.*` are presented under System. Actions use the explicit view, create, update, delete, export order.
+
+Round 1 also removed the accidentally committed `backend/package-lock.json` from git and the filesystem.
 
 ## Verification
 
@@ -12,4 +14,4 @@ Implemented the `permission` middleware alias and organization-scoped permission
 
 ## Concerns
 
-- `backend/package-lock.json` was already an untracked worktree file and is included by the brief's required `git add backend` command; it is unrelated to the permission implementation.
+- No known concerns.

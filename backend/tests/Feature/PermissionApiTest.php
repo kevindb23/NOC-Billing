@@ -63,7 +63,7 @@ class PermissionApiTest extends TestCase
             ->assertJson(['message' => 'This action is unauthorized.']);
     }
 
-    public function test_catalog_groups_and_actions_follow_the_seeded_order(): void
+    public function test_catalog_uses_authority_groups_and_action_order(): void
     {
         [$user, $organization] = $this->userWithPermission('roles.view');
         (new PermissionSeeder())->run();
@@ -74,51 +74,45 @@ class PermissionApiTest extends TestCase
 
         $response->assertOk()->assertExactJson([
             'data' => [
-                ['group' => 'audit-logs', 'permissions' => [
-                    ['name' => 'audit-logs.export', 'action' => 'export'],
-                    ['name' => 'audit-logs.view', 'action' => 'view'],
-                ]],
-                ['group' => 'billing', 'permissions' => [
-                    ['name' => 'billing.create', 'action' => 'create'],
-                    ['name' => 'billing.delete', 'action' => 'delete'],
-                    ['name' => 'billing.export', 'action' => 'export'],
-                    ['name' => 'billing.update', 'action' => 'update'],
-                    ['name' => 'billing.view', 'action' => 'view'],
-                ]],
-                ['group' => 'dashboard', 'permissions' => [
+                ['group' => 'Dashboard', 'permissions' => [
+                    ['name' => 'dashboard.view', 'action' => 'view'],
                     ['name' => 'dashboard.create', 'action' => 'create'],
+                    ['name' => 'dashboard.update', 'action' => 'update'],
                     ['name' => 'dashboard.delete', 'action' => 'delete'],
                     ['name' => 'dashboard.export', 'action' => 'export'],
-                    ['name' => 'dashboard.update', 'action' => 'update'],
-                    ['name' => 'dashboard.view', 'action' => 'view'],
                 ]],
-                ['group' => 'network', 'permissions' => [
+                ['group' => 'Billing', 'permissions' => [
+                    ['name' => 'billing.view', 'action' => 'view'],
+                    ['name' => 'billing.create', 'action' => 'create'],
+                    ['name' => 'billing.update', 'action' => 'update'],
+                    ['name' => 'billing.delete', 'action' => 'delete'],
+                    ['name' => 'billing.export', 'action' => 'export'],
+                ]],
+                ['group' => 'Network', 'permissions' => [
+                    ['name' => 'network.view', 'action' => 'view'],
                     ['name' => 'network.create', 'action' => 'create'],
+                    ['name' => 'network.update', 'action' => 'update'],
                     ['name' => 'network.delete', 'action' => 'delete'],
                     ['name' => 'network.export', 'action' => 'export'],
-                    ['name' => 'network.update', 'action' => 'update'],
-                    ['name' => 'network.view', 'action' => 'view'],
                 ]],
-                ['group' => 'roles', 'permissions' => [
-                    ['name' => 'roles.create', 'action' => 'create'],
-                    ['name' => 'roles.delete', 'action' => 'delete'],
-                    ['name' => 'roles.export', 'action' => 'export'],
-                    ['name' => 'roles.update', 'action' => 'update'],
-                    ['name' => 'roles.view', 'action' => 'view'],
-                ]],
-                ['group' => 'system', 'permissions' => [
-                    ['name' => 'system.create', 'action' => 'create'],
-                    ['name' => 'system.delete', 'action' => 'delete'],
-                    ['name' => 'system.export', 'action' => 'export'],
-                    ['name' => 'system.update', 'action' => 'update'],
+                ['group' => 'System', 'permissions' => [
                     ['name' => 'system.view', 'action' => 'view'],
-                ]],
-                ['group' => 'users', 'permissions' => [
-                    ['name' => 'users.create', 'action' => 'create'],
-                    ['name' => 'users.delete', 'action' => 'delete'],
-                    ['name' => 'users.export', 'action' => 'export'],
-                    ['name' => 'users.update', 'action' => 'update'],
                     ['name' => 'users.view', 'action' => 'view'],
+                    ['name' => 'roles.view', 'action' => 'view'],
+                    ['name' => 'audit-logs.view', 'action' => 'view'],
+                    ['name' => 'system.create', 'action' => 'create'],
+                    ['name' => 'users.create', 'action' => 'create'],
+                    ['name' => 'roles.create', 'action' => 'create'],
+                    ['name' => 'system.update', 'action' => 'update'],
+                    ['name' => 'users.update', 'action' => 'update'],
+                    ['name' => 'roles.update', 'action' => 'update'],
+                    ['name' => 'system.delete', 'action' => 'delete'],
+                    ['name' => 'users.delete', 'action' => 'delete'],
+                    ['name' => 'roles.delete', 'action' => 'delete'],
+                    ['name' => 'system.export', 'action' => 'export'],
+                    ['name' => 'users.export', 'action' => 'export'],
+                    ['name' => 'roles.export', 'action' => 'export'],
+                    ['name' => 'audit-logs.export', 'action' => 'export'],
                 ]],
             ],
         ]);

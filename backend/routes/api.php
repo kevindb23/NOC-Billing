@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\BillingController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Middleware\ResolveOrganization;
 use Illuminate\Support\Facades\Route;
 
@@ -13,6 +14,7 @@ Route::prefix('v1/auth')->group(function (): void {
 Route::prefix('v1')->middleware(['auth:sanctum', ResolveOrganization::class])->group(function (): void {
     Route::get('auth/me', [AuthController::class, 'me']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
+    Route::get('audit-logs', [AuditLogController::class, 'index']);
     Route::get('customers', [CustomerController::class, 'index']);
     Route::post('customers', [CustomerController::class, 'store']);
     Route::get('customers/{publicId}', [CustomerController::class, 'show']);

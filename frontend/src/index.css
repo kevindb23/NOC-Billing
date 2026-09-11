@@ -37,7 +37,7 @@
     --chart-3: oklch(0.45 0.05 258);
     --chart-4: oklch(0.76 0.12 72);
     --chart-5: oklch(0.62 0.13 28);
-    --radius: 0.5rem;
+    --radius: 1rem;
     --sidebar: oklch(0.2 0.028 258);
     --sidebar-foreground: oklch(0.95 0.012 90);
     --sidebar-primary: oklch(0.81 0.17 145);
@@ -49,8 +49,9 @@
   }
 
   body {
-    @apply min-w-[320px] bg-background font-sans text-foreground antialiased;
-    background-image: none;
+    @apply min-w-[320px] font-sans text-foreground antialiased;
+    background-color: var(--background);
+    background-image: radial-gradient(circle at 12% 8%, oklch(0.98 0.035 145 / 45%), transparent 27rem), linear-gradient(135deg, transparent 0 48%, oklch(0.94 0.018 88 / 35%) 48.1% 48.25%, transparent 48.35%);
   }
 
   button,

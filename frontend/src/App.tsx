@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { FormEvent } from 'react'
 import {
   BellIcon,
   BellRingingIcon,
@@ -8,17 +8,14 @@ import {
   ClipboardTextIcon,
   CloudIcon,
   ChartLineUpIcon,
-  CheckCircleIcon,
   CreditCardIcon,
-  CurrencyDollarIcon,
   DesktopTowerIcon,
-  GearIcon,
   HardDriveIcon,
   HouseIcon,
   InvoiceIcon,
-  MagnifyingGlassIcon,
   EnvelopeSimpleIcon,
   KeyIcon,
+  MoonIcon,
   PaintBrushIcon,
   ReceiptIcon,
   NetworkIcon,
@@ -27,23 +24,24 @@ import {
   ShareNetworkIcon,
   SidebarSimpleIcon,
   ShieldCheckIcon,
+  SunIcon,
   TagIcon,
   UserGearIcon,
   UsersThreeIcon,
   WifiHighIcon,
+  XIcon,
 } from '@phosphor-icons/react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
-import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { apiRequest } from './lib/api'
 import { readStoredView, type View } from './lib/viewState'
+import { DashboardPage } from './components/DashboardPage'
 import { NetworkModulePage } from './components/NetworkModulePage'
 import { ResourceTablePage } from './components/ResourceTablePage'
 import { SubscribersPage } from './components/SubscribersPage'
@@ -98,15 +96,20 @@ function openOnlySection(section: NavSection): Record<NavSection, boolean> {
 
 function App() {
   const [session, setSession] = useState<Session | null>(() => JSON.parse(localStorage.getItem('isp-session') || 'null'))
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const stored = localStorage.getItem('isp-theme')
+    return stored === 'dark' || stored === 'light' ? stored : (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+  })
   const [view, setView] = useState<AppView>(readStoredAppView)
   const [error, setError] = useState('')
   useEffect(() => { document.title = BRAND_NAME }, [])
+  useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); localStorage.setItem('isp-theme', theme) }, [theme])
   useEffect(() => { localStorage.setItem('isp-view', view) }, [view])
   const signIn = (next: Session) => { localStorage.setItem('isp-session', JSON.stringify(next)); setSession(next); setError('') }
   const signOut = async () => { if (session) await apiRequest('/auth/logout', { method: 'POST' }, session.token).catch(() => undefined); localStorage.removeItem('isp-session'); setSession(null) }
 
   if (!session) return <Login onSignedIn={signIn} error={error} setError={setError} />
-  return <Shell session={session} view={view} setView={setView} signOut={signOut} />
+  return <Shell session={session} view={view} setView={setView} signOut={signOut} theme={theme} setTheme={setTheme} />
 }
 
 function Login({ onSignedIn, error, setError }: { onSignedIn: (s: Session) => void; error: string; setError: (s: string) => void }) {
@@ -179,11 +182,12 @@ function NetworkIllustration() {
   </div>
 }
 
-function Shell({ session, view, setView, signOut }: { session: Session; view: AppView; setView: (v: AppView) => void; signOut: () => void }) {
+function Shell({ session, view, setView, signOut, theme, setTheme }: { session: Session; view: AppView; setView: (v: AppView) => void; signOut: () => void; theme: 'light' | 'dark'; setTheme: (theme: 'light' | 'dark') => void }) {
   const current = nav.find(item => item.key === view)
   const activeSection = current?.section ?? 'Dashboard'
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('isp-sidebar-collapsed') === 'true')
-  const [sidebarSearch, setSidebarSearch] = useState('')
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [expandedSections, setExpandedSections] = useState<Record<NavSection, boolean>>(() => {
     const stored = localStorage.getItem('isp-expanded-sections')
     if (stored) {
@@ -197,8 +201,8 @@ function Shell({ session, view, setView, signOut }: { session: Session; view: Ap
     }
     return openOnlySection(activeSection)
   })
-  const toggleSection = (section: NavSection) => setExpandedSections(() => {
-    const next = openOnlySection(section)
+  const toggleSection = (section: NavSection) => setExpandedSections(current => {
+    const next = current[section] ? { Dashboard: true, Billing: false, Network: false, System: false } : openOnlySection(section)
     localStorage.setItem('isp-expanded-sections', JSON.stringify(next))
     return next
   })
@@ -209,17 +213,30 @@ function Shell({ session, view, setView, signOut }: { session: Session; view: Ap
     localStorage.setItem('isp-expanded-sections', JSON.stringify(next))
   }
   const toggleSidebar = () => setSidebarCollapsed(current => { const next = !current; localStorage.setItem('isp-sidebar-collapsed', String(next)); return next })
-  const normalizedSidebarSearch = sidebarSearch.trim().toLowerCase()
-  const matchingNav = (section: NavSection) => nav.filter(item => item.section === section && (!normalizedSidebarSearch || item.label.toLowerCase().includes(normalizedSidebarSearch)))
   return <div className={cn('billing-app min-h-screen bg-muted/30 text-foreground md:grid', sidebarCollapsed ? 'md:grid-cols-[4.5rem_1fr]' : 'md:grid-cols-[15rem_1fr]')}>
+    <div className="billing-header-actions fixed right-52 top-4 z-20 hidden items-center gap-1 md:flex"><Button variant="ghost" size="icon" className="rounded-xl" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <SunIcon /> : <MoonIcon />}</Button><Button variant="ghost" size="icon" className="rounded-xl" aria-label="Open notifications" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(true)}><BellIcon /></Button></div>
     <aside className={cn('billing-sidebar relative hidden bg-sidebar text-sidebar-foreground md:flex md:flex-col', sidebarCollapsed && 'items-center')}>
-      <div className={cn('relative flex h-14 w-full items-center border-b border-sidebar-border/70 px-4', sidebarCollapsed ? 'justify-center' : 'gap-2.5')}><BrandMark className="size-8 rounded-md" />{!sidebarCollapsed && <div className="min-w-0"><p className="truncate font-heading text-xs font-semibold tracking-tight">{BRAND_NAME}</p><p className="text-[9px] uppercase tracking-[0.14em] text-sidebar-foreground/45">Billing operations</p></div>}<Button variant="ghost" size="icon-sm" className="absolute right-1.5 top-3 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground" onClick={toggleSidebar} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><SidebarSimpleIcon /></Button></div>
-      {!sidebarCollapsed && <div className="space-y-2 border-b border-sidebar-border/70 px-3 py-3"><div className="flex items-center gap-2 rounded-lg border border-sidebar-border/70 bg-sidebar-accent/35 px-2.5 py-2" aria-label="Current workspace"><span className="grid size-5 place-items-center rounded bg-sidebar-primary text-[9px] font-bold text-sidebar-primary-foreground">{BRAND_MARK}</span><span className="min-w-0 flex-1"><span className="block truncate text-[11px] font-medium">This installation</span><span className="block text-[9px] text-sidebar-foreground/45">Operator workspace</span></span></div><label className="flex h-8 items-center gap-2 rounded-lg bg-sidebar-accent/55 px-2 text-sidebar-foreground/60 focus-within:ring-1 focus-within:ring-sidebar-ring"><MagnifyingGlassIcon size={14} aria-hidden="true" /><span className="sr-only">Search navigation</span><Input value={sidebarSearch} onChange={event => setSidebarSearch(event.target.value)} className="h-7 min-w-0 border-0 bg-transparent px-0 text-[11px] text-sidebar-foreground placeholder:text-sidebar-foreground/40 focus-visible:ring-0" placeholder="Search navigation" type="search" /></label></div>}
-      <nav className={cn("flex flex-1 flex-col gap-3 overflow-y-auto py-3", sidebarCollapsed ? "w-full px-2" : "px-3")} aria-label="Primary navigation">{navSections.map(section => { const items = matchingNav(section); const showItems = section === "Dashboard" || expandedSections[section] || Boolean(normalizedSidebarSearch); return <div className="flex flex-col gap-1" key={section}>{section === "Dashboard" ? <p className={cn("px-2 pb-1 text-[9px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/45", sidebarCollapsed && "sr-only")}>Dashboard</p> : <button type="button" className={cn("flex items-center justify-between px-2 pb-1 text-left text-[9px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground/75", sidebarCollapsed && "sr-only")} onClick={() => toggleSection(section)} aria-expanded={expandedSections[section]}><span>{section}</span><CaretRightIcon size={12} className={cn("transition-transform", expandedSections[section] && "rotate-90")} aria-hidden="true" /></button>}{showItems && items.map(item => <Button key={item.key} variant="ghost" size="sm" className={cn("h-8 w-full justify-start gap-2 rounded-lg px-2 text-[11px] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground", sidebarCollapsed && "justify-center px-2", view === item.key && "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground")} onClick={() => selectNavItem(item)} aria-current={view === item.key ? "page" : undefined} title={sidebarCollapsed ? item.label : undefined}><NavIcon name={item.key} /><span className={sidebarCollapsed ? "sr-only" : undefined}>{item.label}</span></Button>)}</div> })}{!sidebarCollapsed && normalizedSidebarSearch && !nav.some(item => item.label.toLowerCase().includes(normalizedSidebarSearch)) && <p className="px-2 pt-1 text-[10px] text-sidebar-foreground/45">No navigation matches.</p>}</nav>
-      <div className={cn('w-full border-t border-sidebar-border/70 p-3', sidebarCollapsed && 'px-2')}><Button variant="ghost" size="sm" className={cn('h-8 w-full justify-start gap-2 rounded-lg px-2 text-[11px] text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground', sidebarCollapsed && 'justify-center px-2')} onClick={signOut} title={sidebarCollapsed ? 'Sign out' : undefined}><SignOutIcon data-icon="inline-start" /><span className={sidebarCollapsed ? 'sr-only' : undefined}>Sign out</span></Button>{!sidebarCollapsed && <p className="px-2 pt-2 text-[9px] text-sidebar-foreground/40">v0.2 billing foundation</p>}</div>
-    </aside>
-    <main className="min-w-0"><header className="billing-header sticky top-0 z-10 flex min-h-14 items-center justify-between border-b border-border/70 px-5 backdrop-blur sm:px-7"><div className="flex min-w-0 items-center gap-3"><div className="md:hidden"><BrandMark className="size-8 rounded-md" /></div><Separator orientation="vertical" className="hidden h-5 md:block" /><div className="min-w-0"><p className="truncate font-mono text-[9px] font-medium uppercase tracking-[0.18em] text-muted-foreground">ISP billing / {current?.section}</p><h1 className="truncate font-heading text-sm font-semibold">{current?.label}</h1></div></div><div className="flex shrink-0 items-center gap-2"><Button variant="ghost" size="icon-sm" className="rounded-lg" aria-label="Notifications"><BellIcon /></Button><Separator orientation="vertical" className="h-5" /><div className="flex items-center gap-2"><Avatar size="sm"><AvatarFallback>{session.user.name.slice(0, 1).toUpperCase()}</AvatarFallback></Avatar><div className="hidden text-right sm:block"><p className="text-xs font-medium">{session.user.name}</p><p className="text-[10px] text-muted-foreground">Administrator</p></div></div></div></header><nav className="flex gap-1 overflow-x-auto border-b border-sidebar-border/70 bg-sidebar px-2 py-1.5 text-sidebar-foreground md:hidden" aria-label="Mobile navigation">{nav.map(item => <Button key={item.key} variant="ghost" size="sm" className={cn('h-8 shrink-0 gap-2 rounded-lg px-2 text-[11px] text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground', view === item.key && 'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground')} onClick={() => selectNavItem(item)} aria-current={view === item.key ? 'page' : undefined}><NavIcon name={item.key} />{item.label}</Button>)}</nav><div className="billing-content billing-canvas mx-auto w-full max-w-[1680px] p-5 sm:p-7"><section className="min-w-0" aria-label={`${current?.label ?? 'Application'} content`}>{view === 'overview' ? <Overview session={session} /> : view === 'subscribers' ? <SubscribersPage session={session} /> : isModuleView(view) ? <NetworkModulePage module={view} section={current?.section} /> : <ResourceTablePage session={session} view={view} />}</section></div></main>
+      <div className={cn('relative flex h-16 w-full items-center px-5', sidebarCollapsed ? 'justify-center' : 'gap-3')}><BrandMark />{!sidebarCollapsed && <div><p className="font-heading text-sm font-semibold tracking-tight">{BRAND_NAME}</p><p className="text-[10px] text-sidebar-foreground/55">Billing operations</p></div>}</div>
+      <nav className={cn("mt-5 flex flex-1 flex-col gap-4 overflow-y-auto", sidebarCollapsed ? "w-full px-2" : "px-3")} aria-label="Primary navigation">{navSections.map(section => <div className="flex flex-col gap-1" key={section}>{section === "Dashboard" ? <p className={cn("px-3 pb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/45", sidebarCollapsed && "sr-only")}>Dashboard</p> : <button type="button" className={cn("flex items-center justify-between px-3 pb-1 text-left text-[10px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground/75", sidebarCollapsed && "sr-only")} onClick={() => toggleSection(section)} aria-expanded={expandedSections[section]}><span>{section}</span><CaretRightIcon size={12} className={cn("transition-transform", expandedSections[section] && "rotate-90")} aria-hidden="true" /></button>}{(section === "Dashboard" || expandedSections[section]) && nav.filter(item => item.section === section).map(item => <Button key={item.key} variant="ghost" className={cn("w-full justify-start gap-2.5 rounded-xl px-3 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground", sidebarCollapsed && "justify-center px-2", view === item.key && "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground")} onClick={() => selectNavItem(item)} aria-current={view === item.key ? "page" : undefined} title={sidebarCollapsed ? item.label : undefined}><NavIcon name={item.key} /><span className={sidebarCollapsed ? "sr-only" : undefined}>{item.label}</span></Button>)}</div>)}</nav>
+      <div className={cn('m-3 mt-3 w-full p-0 pt-3', sidebarCollapsed && 'px-2')}><Button variant="ghost" className={cn('w-full justify-start gap-2.5 rounded-xl px-3 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground', sidebarCollapsed && 'justify-center px-2')} onClick={signOut} title={sidebarCollapsed ? 'Sign out' : undefined}><SignOutIcon data-icon="inline-start" /><span className={sidebarCollapsed ? 'sr-only' : undefined}>Sign out</span></Button>{!sidebarCollapsed && <p className="px-3 pt-3 text-[10px] text-sidebar-foreground/40">v0.2 billing foundation</p>}</div>
+</aside>
+    <main className="min-w-0"><header className="billing-header sticky top-0 z-10 flex min-h-16 items-center justify-between px-5 backdrop-blur sm:px-8"><div className="flex items-center gap-1.5"><div className="md:hidden"><BrandMark /></div><Button variant="ghost" size="icon-sm" className="hidden text-muted-foreground hover:bg-muted hover:text-foreground md:inline-flex md:size-6" onClick={toggleSidebar} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><SidebarSimpleIcon weight="bold" /></Button><Separator orientation="vertical" className="hidden h-5 md:block" /><p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">ISP billing / {current?.section}</p></div><div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="rounded-xl" aria-label="Open notifications" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(true)}><BellIcon /></Button><Separator orientation="vertical" className="h-5" /><button type="button" className="billing-profile-trigger flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/70" aria-expanded={profileOpen} aria-haspopup="dialog" onClick={() => setProfileOpen(current => !current)}><Avatar size="sm"><AvatarFallback>{session.user.name.slice(0, 1).toUpperCase()}</AvatarFallback></Avatar><span className="hidden text-xs font-medium sm:block">{session.user.name}</span></button></div></header><nav className="flex gap-1 overflow-x-auto bg-sidebar p-2 text-sidebar-foreground md:hidden" aria-label="Mobile navigation">{nav.map(item => <Button key={item.key} variant="ghost" className={cn('shrink-0 gap-2 rounded-xl text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground', view === item.key && 'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground')} onClick={() => selectNavItem(item)} aria-current={view === item.key ? 'page' : undefined}><NavIcon name={item.key} />{item.label}</Button>)}</nav><div className="billing-content billing-canvas mx-auto flex w-full max-w-[1680px] flex-col gap-6 px-4 pb-4 pt-0 sm:px-6 sm:pb-6 sm:pt-0">{view === 'overview' ? <DashboardPage session={session} /> : view === 'subscribers' ? <SubscribersPage session={session} /> : isModuleView(view) ? <NetworkModulePage module={view} section={current?.section} /> : <ResourceTablePage session={session} view={view} />}</div></main>
+    {notificationsOpen && <NotificationDrawer onClose={() => setNotificationsOpen(false)} />}
+    {profileOpen && <ProfileDrawer name={session.user.name} email={session.user.email} onClose={() => setProfileOpen(false)} onSignOut={signOut} />}
   </div>
+}
+
+function ProfileDrawer({ name, email, onClose, onSignOut }: { name: string; email: string; onClose: () => void; onSignOut: () => void }) {
+  return <div className="billing-profile-layer fixed inset-0 z-40" role="dialog" aria-modal="true" aria-labelledby="profile-drawer-title"><button type="button" className="absolute inset-0" aria-label="Close profile menu" onClick={onClose} /><aside className="billing-profile-drawer absolute right-4 top-[4.35rem] w-72 rounded-lg border bg-card p-2 shadow-xl sm:right-8"><div className="flex items-center gap-3 px-3 py-3"><Avatar><AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0"><h2 id="profile-drawer-title" className="truncate text-sm font-semibold">{name}</h2><p className="truncate text-xs text-muted-foreground">{email}</p></div></div><Separator /><div className="mt-2 grid gap-1"><Button variant="ghost" className="justify-start gap-3" onClick={onClose}><UserGearIcon size={16} />Profile</Button><Button variant="ghost" className="justify-start gap-3 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onSignOut}><SignOutIcon size={16} />Logout</Button></div></aside></div>
+}
+
+function NotificationDrawer({ onClose }: { onClose: () => void }) {
+  const items = [
+    { title: 'Invoice queue is clear', body: 'No billing documents require immediate review.', time: 'Now' },
+    { title: 'Subscriber records synced', body: 'Directory counts are current for this installation.', time: '5m' },
+    { title: 'Payment ledger healthy', body: 'Recorded receipts are ready for reconciliation.', time: '18m' },
+  ]
+  return <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-labelledby="notification-drawer-title"><button type="button" className="absolute inset-0 bg-black/35 backdrop-blur-[1px]" aria-label="Close notifications" onClick={onClose} /><aside className="notification-drawer relative z-10 flex h-full w-full max-w-sm flex-col bg-background shadow-2xl"><div className="flex items-center justify-between border-b px-5 py-4"><div><p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Activity</p><h2 id="notification-drawer-title" className="mt-1 font-heading text-lg font-semibold">Notifications</h2></div><Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close notifications"><XIcon /></Button></div><div className="flex-1 overflow-y-auto p-3">{items.map(item => <div className="rounded-md border border-transparent px-3 py-3 transition-colors hover:border-border hover:bg-muted/45" key={item.title}><div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold">{item.title}</p><span className="font-mono text-[10px] text-muted-foreground">{item.time}</span></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{item.body}</p></div>)}</div><div className="border-t px-5 py-3 text-xs text-muted-foreground">Notification center scaffold. Live alerts can be wired to the backend later.</div></aside></div>
 }
 
 function NavIcon({ name }: { name: IconName }) {
@@ -248,16 +265,5 @@ function NavIcon({ name }: { name: IconName }) {
   if (name === 'Audit Logs') return <ClipboardTextIcon {...props} data-icon="inline-start" />
   return <ReceiptIcon {...props} data-icon="inline-start" />
 }
-
-export function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) { return <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">{eyebrow}</p><h2 className="mt-2 font-heading text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h2><p className="mt-2 text-sm text-muted-foreground">{description}</p></div>{action}</div> }
-
-function Overview({ session }: { session: Session }) {
-  const [stats, setStats] = useState({ subscribers: 0, invoices: 0, payments: 0, services: 0 }); const [loading, setLoading] = useState(true); const [error, setError] = useState('')
-  useEffect(() => { Promise.all(['subscribers', 'invoices', 'payments', 'subscriber-services'].map(endpoint => apiRequest<any>(`/${endpoint}?per_page=1`, {}, session.token))).then(([subscribers, invoices, payments, services]) => setStats({ subscribers: subscribers.data.total, invoices: invoices.data.total, payments: payments.data.total, services: services.data.total })).catch(e => setError(e.message)).finally(() => setLoading(false)) }, [session.token])
-  const cards = [{ label: 'Subscribers', value: stats.subscribers, note: 'Active subscriber records', icon: UsersThreeIcon }, { label: 'Subscriber services', value: stats.services, note: 'Provisioning-ready services', icon: WifiHighIcon }, { label: 'Invoices', value: stats.invoices, note: 'Issued billing documents', icon: InvoiceIcon }, { label: 'Payments', value: stats.payments, note: 'Recorded receipts', icon: CurrencyDollarIcon }]
-  return <div className="flex flex-col gap-8"><PageHeader eyebrow="Control room / live ledger" title="Billing overview" description={`Live financial and subscriber activity for ${'this installation'}.`} action={<Button variant="outline" size="sm" className="rounded-xl shadow-[0_10px_18px_-15px_rgb(24_35_54_/_55%)]"><GearIcon data-icon="inline-start" />Workspace settings</Button>} />{error && <Alert variant="destructive"><AlertTitle>Live data unavailable</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(card => <StatCard key={card.label} {...card} loading={loading} />)}</div><div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]"><Card><CardHeader className="pb-4"><div><CardDescription className="font-mono uppercase tracking-[0.16em]">Operating rhythm</CardDescription><CardTitle className="mt-2 text-base">Billing workflow</CardTitle></div><CardAction><Badge variant="secondary" className="rounded-full"><CheckCircleIcon data-icon="inline-start" />Operational</Badge></CardAction></CardHeader><CardContent className="grid gap-3 pt-1 sm:grid-cols-2">{[['01', 'Subscriber records', 'Establish the account holder and contact record.', UsersThreeIcon], ['02', 'Service & plan', 'Connect the service to a versioned commercial plan.', WifiHighIcon], ['03', 'Invoice issuance', 'Generate an immutable charge with line items.', InvoiceIcon], ['04', 'Payment allocation', 'Allocate receipts and preserve the balance ledger.', CreditCardIcon]].map(([number, title, body, Icon]) => <div className="billing-workflow-step flex gap-3 rounded-2xl bg-background/80 p-4" key={number as string}><div className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-secondary-foreground shadow-[0_8px_16px_-13px_rgb(24_35_54_/_45%)]"><Icon size={16} weight="bold" aria-hidden="true" /></div><div><p className="text-xs font-semibold"><span className="billing-step-number text-primary">{number as string}</span> · {title as string}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{body as string}</p></div></div>)}</CardContent></Card><Card className="billing-ink-panel bg-primary text-primary-foreground"><CardHeader><CardDescription className="text-primary-foreground/65">Data integrity</CardDescription><CardTitle className="text-base">One source of truth</CardTitle></CardHeader><CardContent><p className="text-sm leading-6 text-primary-foreground/75">Every billing query is resolved through the installation context. Records from other installations are rejected before they reach the operator interface.</p><div className="mt-6 flex items-center gap-2 text-xs"><CheckCircleIcon weight="fill" />Installation-wide by default</div></CardContent><CardFooter className="text-xs text-primary-foreground/60">Authoritative MySQL ledger</CardFooter></Card></div></div>
-}
-
-function StatCard({ label, value, note, icon: Icon, loading }: { label: string; value: number; note: string; icon: any; loading: boolean }) { return <Card size="sm" className="billing-stat-card"><CardHeader className="pb-2"><CardDescription className="flex items-center justify-between"><span>{label}</span><span className="billing-stat-icon grid size-8 place-items-center rounded-xl bg-secondary text-secondary-foreground"><Icon size={15} aria-hidden="true" /></span></CardDescription><CardTitle className="font-heading text-3xl tracking-tight">{loading ? <Skeleton className="h-8 w-16" /> : value}</CardTitle></CardHeader><CardContent><p className="text-[10px] text-muted-foreground">{note}</p></CardContent></Card> }
 
 export default App

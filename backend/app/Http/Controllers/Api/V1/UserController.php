@@ -68,13 +68,14 @@ class UserController extends Controller
     {
         $organization = $this->organization($request);
         $validated = $request->validated();
-        $user = $this->organizationUser($organization, $publicId);
+        $user = $this->organizationUser($organization, $publicId, true);
         $oldSnapshot = $this->snapshot($user, $organization);
         $rolesProvided = array_key_exists('role_ids', $validated);
         $roleIds = $validated['role_ids'] ?? [];
         unset($validated['role_ids']);
+        $reactivating = $user->pivot->status !== 'active' && (($validated['status'] ?? null) === 'active');
 
-        $user = DB::transaction(function () use ($request, $organization, $user, $validated, $rolesProvided, $roleIds, $oldSnapshot): User {
+        $user = DB::transaction(function () use ($request, $organization, $user, $validated, $rolesProvided, $roleIds, $oldSnapshot, $reactivating): User {
             $currentRoleIds = $this->roleIds($user, $organization);
             $newRoleIds = $rolesProvided ? $roleIds : $currentRoleIds;
             $status = $validated['status'] ?? $user->status;
@@ -83,7 +84,10 @@ class UserController extends Controller
             if ($rolesProvided) {
                 $this->syncRoles($user, $organization, $newRoleIds);
             }
-            $freshUser = $this->organizationUser($organization, $user->public_id);
+            if ($reactivating) {
+                $organization->users()->updateExistingPivot($user->id, ['status' => 'active']);
+            }
+            $freshUser = $this->organizationUser($organization, $user->public_id, true);
             $newSnapshot = $this->snapshot($freshUser, $organization);
             $this->auditLogger->record($request, 'user.updated', $user, $oldSnapshot, $newSnapshot);
             if ($rolesProvided && $currentRoleIds !== $newRoleIds) {

@@ -16,6 +16,16 @@ Audit events use the existing `AuditLogger`: `user.created`, `user.updated`, `us
 - `git diff --check` — passed.
 - No frontend files changed.
 
+## Round 1: Reactivation
+
+Fixed authorized PUT lookup for inactive organization memberships. An explicit `status: active` now restores the membership pivot transactionally while allowing role replacement; GET and list continue to expose only active memberships. Added a regression covering DELETE, active-only exclusion, PUT reactivation, role restoration, tenant scope, and status/role audit snapshots.
+
+- Regression red run: authorized PUT returned 404 because update used the active-only membership lookup.
+- Regression green: included in focused suite — 11 passed, 73 assertions.
+- Full backend after the fix: 29 passed, 120 assertions.
+- Targeted Pint check for changed files — passed.
+- `git diff --check` — passed.
+
 ## Concerns
 
 - Repository-wide `./vendor/bin/pint --test` still reports 28 pre-existing style issues across unrelated files; Task 3 files pass targeted formatting.

@@ -135,6 +135,37 @@ class UserCrudTest extends TestCase
         $this->assertAuditSecretsAbsent($user);
     }
 
+    public function test_deactivated_membership_can_be_reactivated_with_roles_and_audited_changes(): void
+    {
+        [$actor, $organization] = $this->actorWithPermission('users.delete');
+        $permissionHolder = $organization->roles()->where('name', 'Permission holder')->firstOrFail();
+        $permissionHolder->permissions()->attach(Permission::create(['name' => 'users.view']));
+        $permissionHolder->permissions()->attach(Permission::create(['name' => 'users.update']));
+        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Restored role']);
+        $user = User::factory()->create();
+        $organization->users()->attach($user, ['status' => 'active']);
+        Sanctum::actingAs($actor);
+
+        $this->organizationRequest($organization)->deleteJson('/api/v1/users/'.$user->public_id)->assertOk();
+        $this->organizationRequest($organization)->getJson('/api/v1/users/'.$user->public_id)->assertNotFound();
+        $this->assertNotContains($user->public_id, collect($this->organizationRequest($organization)->getJson('/api/v1/users')->json('data.data'))->pluck('public_id')->all());
+
+        $response = $this->organizationRequest($organization)->putJson('/api/v1/users/'.$user->public_id, [
+            'status' => 'active', 'role_ids' => [$role->id],
+        ]);
+
+        $response->assertOk()->assertJsonPath('data.membership_status', 'active')->assertJsonPath('data.roles.0.name', 'Restored role');
+        $this->assertDatabaseHas('organization_user', ['organization_id' => $organization->id, 'user_id' => $user->id, 'status' => 'active']);
+        $this->assertDatabaseHas('role_assignments', ['organization_id' => $organization->id, 'user_id' => $user->id, 'role_id' => $role->id]);
+        $this->assertSame(['user.deactivated', 'user.updated', 'user.roles_updated'], AuditLog::where('auditable_id', $user->id)->orderBy('id')->pluck('action')->all());
+        $updateAudit = AuditLog::where('auditable_id', $user->id)->where('action', 'user.updated')->firstOrFail();
+        $this->assertSame('inactive', $updateAudit->old_values['membership_status']);
+        $this->assertSame('active', $updateAudit->new_values['membership_status']);
+        $rolesAudit = AuditLog::where('auditable_id', $user->id)->where('action', 'user.roles_updated')->firstOrFail();
+        $this->assertSame([], $rolesAudit->old_values['roles']);
+        $this->assertSame([['id' => $role->id, 'name' => 'Restored role']], $rolesAudit->new_values['roles']);
+    }
+
     public function test_last_active_administrator_cannot_be_deactivated(): void
     {
         [$actor, $organization] = $this->actorWithPermission('users.delete');

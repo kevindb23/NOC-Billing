@@ -124,7 +124,8 @@ class UserCrudTest extends TestCase
         $this->organizationRequest($organization)->putJson('/api/v1/users/'.$user->public_id, ['status' => 'active'])
             ->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.membership_status', 'active');
         $this->assertDatabaseHas('organization_user', ['organization_id' => $organization->id, 'user_id' => $user->id, 'status' => 'active']);
-        $audits = AuditLog::where('auditable_id', $user->id)->where('action', 'user.updated')->orderBy('id')->get();
+        $audits = AuditLog::where('auditable_id', $user->id)->orderBy('id')->get();
+        $this->assertSame(['user.updated', 'user.activated'], $audits->pluck('action')->all());
         $this->assertSame('active', $audits[0]->old_values['status']);
         $this->assertSame('inactive', $audits[0]->new_values['status']);
         $this->assertSame('active', $audits[0]->old_values['membership_status']);
@@ -181,7 +182,7 @@ class UserCrudTest extends TestCase
         $this->assertAuditSecretsAbsent($user);
     }
 
-    public function test_user_can_be_deactivated_without_deleting_the_user(): void
+    public function test_user_can_be_deactivated_without_deleting_the_user_and_audits_status_transition(): void
     {
         [$actor, $organization] = $this->actorWithPermission('users.delete');
         $user = User::factory()->create();
@@ -191,10 +192,41 @@ class UserCrudTest extends TestCase
         $response = $this->organizationRequest($organization)->deleteJson('/api/v1/users/'.$user->public_id);
 
         $response->assertOk()->assertJsonPath('data.membership_status', 'inactive');
-        $this->assertDatabaseHas('users', ['id' => $user->id]);
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'status' => 'inactive']);
         $this->assertDatabaseHas('organization_user', ['organization_id' => $organization->id, 'user_id' => $user->id, 'status' => 'inactive']);
         $this->assertAuditActions(['user.deactivated'], $user);
+        $audit = AuditLog::where('auditable_id', $user->id)->firstOrFail();
+        $this->assertSame($actor->id, $audit->actor_user_id);
+        $this->assertSame($organization->id, $audit->organization_id);
+        $this->assertSame('active', $audit->old_values['status']);
+        $this->assertSame('inactive', $audit->new_values['status']);
+        $this->assertSame('active', $audit->old_values['membership_status']);
+        $this->assertSame('inactive', $audit->new_values['membership_status']);
         $this->assertAuditSecretsAbsent($user);
+        $this->assertAuditTokensAbsent($user);
+    }
+
+    public function test_status_activation_emits_user_activated_instead_of_user_updated(): void
+    {
+        [$actor, $organization] = $this->actorWithPermission('users.update');
+        $user = User::factory()->create(['status' => 'inactive']);
+        $organization->users()->attach($user, ['status' => 'inactive']);
+        Sanctum::actingAs($actor);
+
+        $this->organizationRequest($organization)->putJson('/api/v1/users/'.$user->public_id, ['status' => 'active'])
+            ->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.membership_status', 'active');
+
+        $audits = AuditLog::where('auditable_id', $user->id)->orderBy('id')->get();
+        $this->assertSame(['user.activated'], $audits->pluck('action')->all());
+        $audit = $audits->first();
+        $this->assertSame($actor->id, $audit->actor_user_id);
+        $this->assertSame($organization->id, $audit->organization_id);
+        $this->assertSame('inactive', $audit->old_values['status']);
+        $this->assertSame('active', $audit->new_values['status']);
+        $this->assertSame('inactive', $audit->old_values['membership_status']);
+        $this->assertSame('active', $audit->new_values['membership_status']);
+        $this->assertAuditSecretsAbsent($user);
+        $this->assertAuditTokensAbsent($user);
     }
 
     public function test_deactivated_membership_can_be_reactivated_with_roles_and_audited_changes(): void
@@ -220,8 +252,8 @@ class UserCrudTest extends TestCase
         $response->assertOk()->assertJsonPath('data.membership_status', 'active')->assertJsonPath('data.roles.0.name', 'Restored role');
         $this->assertDatabaseHas('organization_user', ['organization_id' => $organization->id, 'user_id' => $user->id, 'status' => 'active']);
         $this->assertDatabaseHas('role_assignments', ['organization_id' => $organization->id, 'user_id' => $user->id, 'role_id' => $role->id]);
-        $this->assertSame(['user.deactivated', 'user.updated', 'user.roles_updated'], AuditLog::where('auditable_id', $user->id)->orderBy('id')->pluck('action')->all());
-        $updateAudit = AuditLog::where('auditable_id', $user->id)->where('action', 'user.updated')->firstOrFail();
+        $this->assertSame(['user.deactivated', 'user.activated', 'user.roles_updated'], AuditLog::where('auditable_id', $user->id)->orderBy('id')->pluck('action')->all());
+        $updateAudit = AuditLog::where('auditable_id', $user->id)->where('action', 'user.activated')->firstOrFail();
         $this->assertSame('inactive', $updateAudit->old_values['membership_status']);
         $this->assertSame('active', $updateAudit->new_values['membership_status']);
         $rolesAudit = AuditLog::where('auditable_id', $user->id)->where('action', 'user.roles_updated')->firstOrFail();
@@ -307,6 +339,17 @@ class UserCrudTest extends TestCase
         foreach ($logs as $log) {
             $this->assertArrayNotHasKey('password', $log->old_values ?? []);
             $this->assertArrayNotHasKey('password', $log->new_values ?? []);
+        }
+    }
+
+    private function assertAuditTokensAbsent(User $user): void
+    {
+        $logs = AuditLog::where('auditable_id', $user->id)->get();
+        foreach ($logs as $log) {
+            $this->assertArrayNotHasKey('token', $log->old_values ?? []);
+            $this->assertArrayNotHasKey('token', $log->new_values ?? []);
+            $this->assertArrayNotHasKey('access_token', $log->old_values ?? []);
+            $this->assertArrayNotHasKey('access_token', $log->new_values ?? []);
         }
     }
 }

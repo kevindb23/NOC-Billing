@@ -97,7 +97,12 @@ class UserController extends Controller
             }
             $freshUser = $this->organizationUser($organization, $user->public_id, true);
             $newSnapshot = $this->snapshot($freshUser, $organization);
-            $this->auditLogger->record($request, 'user.updated', $user, $oldSnapshot, $newSnapshot);
+            $auditAction = $statusProvided
+                && $newSnapshot['status'] === 'active'
+                && ($oldSnapshot['status'] !== 'active' || $oldSnapshot['membership_status'] !== 'active')
+                ? 'user.activated'
+                : 'user.updated';
+            $this->auditLogger->record($request, $auditAction, $user, $oldSnapshot, $newSnapshot);
             if ($rolesProvided && $currentRoleIds !== $newRoleIds) {
                 $this->auditLogger->record($request, 'user.roles_updated', $user, ['roles' => $oldSnapshot['roles']], ['roles' => $newSnapshot['roles']]);
             }
@@ -116,6 +121,7 @@ class UserController extends Controller
         $user = DB::transaction(function () use ($request, $organization, $user): User {
             $this->ensureAdministratorProtection($organization, $user, $this->roleIds($user, $organization), true);
             $oldSnapshot = $this->snapshot($user, $organization);
+            $user->update(['status' => 'inactive']);
             $organization->users()->updateExistingPivot($user->id, ['status' => 'inactive']);
             $freshUser = $this->organizationUser($organization, $user->public_id, true);
             $this->auditLogger->record($request, 'user.deactivated', $user, $oldSnapshot, $this->snapshot($freshUser, $organization));

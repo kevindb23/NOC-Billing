@@ -14,6 +14,15 @@ Audit events use the existing `AuditLogger`: `user.created`, `user.updated`, `us
 - PHP syntax checks passed for all new PHP files.
 - Task 3 files were formatted with Pint.
 - `git diff --check` — passed.
+
+## Final Fix: Membership Status Synchronization
+
+Synchronized `organization_user.status` with explicit user status on POST and PUT. Inactive creation now attaches an inactive membership; PUT status changes update both the user and membership, including active reactivation. Last-active-administrator protection remains enforced, and audit snapshots record both user and membership status transitions. Added regressions proving inactive users cannot authenticate.
+
+- Focused: `php artisan test tests/Feature/UserCrudTest.php` — 15 passed, 103 assertions.
+- Full backend: `php artisan test` — 49 passed, 294 assertions.
+- Targeted Pint check for changed files — passed.
+- `git diff --check` — passed.
 - No frontend files changed.
 
 ## Round 1: Reactivation

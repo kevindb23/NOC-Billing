@@ -9,7 +9,7 @@ class PermissionSeeder extends Seeder
 {
     public function run(): void
     {
-        foreach ([
+        $permissions = [
             'audit-logs.export',
             'audit-logs.view',
             'billing.create',
@@ -39,7 +39,11 @@ class PermissionSeeder extends Seeder
             'users.export',
             'users.update',
             'users.view',
-        ] as $name) {
+        ];
+
+        Permission::query()->whereNotIn('name', $permissions)->delete();
+
+        foreach ($permissions as $name) {
             Permission::updateOrCreate(['name' => $name], ['guard_name' => 'api']);
         }
     }

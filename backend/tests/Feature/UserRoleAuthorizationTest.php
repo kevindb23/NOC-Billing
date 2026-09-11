@@ -99,6 +99,7 @@ class UserRoleAuthorizationTest extends TestCase
     {
         $seeder = new PermissionSeeder();
 
+        Permission::create(['name' => 'users.*']);
         $seeder->run();
         $firstRun = Permission::query()->orderBy('name')->pluck('name')->all();
         $seeder->run();

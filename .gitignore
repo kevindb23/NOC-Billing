@@ -42,3 +42,5 @@ isp-billing-database-diagram.*
 docs/
 MASTER.md
 skills-lock.json
+.superdesign
+.worktrees/

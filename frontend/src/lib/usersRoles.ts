@@ -34,8 +34,15 @@ export type PermissionGroup = { group: string; permissions: Permission[] }
 export type UserRequest = { name: string; email: string; password?: string; status?: 'active' | 'inactive'; role_ids?: number[] }
 export type RoleRequest = { name: string; permission_ids?: number[] }
 
-export function listUsers(token?: string, page = 1) {
-  return apiRequest<{ data: Paginated<User> }>(`/users?per_page=20&page=${page}`, {}, token)
+export function hasPermission(permissions: string[] | undefined, permission: string) {
+  return permissions === undefined || permissions.includes(permission)
+}
+
+export function listUsers(token?: string, page = 1, search = '', status: 'all' | 'active' | 'inactive' = 'all') {
+  const params = new URLSearchParams({ per_page: '20', page: String(page) })
+  if (search.trim()) params.set('search', search.trim())
+  if (status !== 'all') params.set('status', status)
+  return apiRequest<{ data: Paginated<User> }>(`/users?${params}`, {}, token)
 }
 
 export function createUser(payload: UserRequest, token?: string) {

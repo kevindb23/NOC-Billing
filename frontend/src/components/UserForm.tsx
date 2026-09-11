@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { XIcon } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
@@ -8,8 +8,7 @@ import { Input } from '@/components/ui/input'
 import type { Role, User, UserRequest } from '@/lib/usersRoles'
 
 export function UserForm({ open, mode, user, roles, error, loading, onClose, onSubmit }: { open: boolean; mode: 'create' | 'edit'; user?: User; roles: Role[]; error?: string; loading?: boolean; onClose: () => void; onSubmit: (payload: UserRequest) => Promise<void> }) {
-  const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [status, setStatus] = useState<'active' | 'inactive'>('active'); const [roleIds, setRoleIds] = useState<number[]>([])
-  useEffect(() => { setName(user?.name || ''); setEmail(user?.email || ''); setPassword(''); setStatus(user?.membership_status === 'inactive' ? 'inactive' : 'active'); setRoleIds(user?.roles.map(role => role.id) || []) }, [user, mode, open])
+  const [name, setName] = useState(user?.name || ''); const [email, setEmail] = useState(user?.email || ''); const [password, setPassword] = useState(''); const [status, setStatus] = useState<'active' | 'inactive'>(user?.membership_status === 'inactive' ? 'inactive' : 'active'); const [roleIds, setRoleIds] = useState<number[]>(user?.roles.map(role => role.id) || [])
   if (!open) return null
   const submit = async (event: FormEvent) => { event.preventDefault(); await onSubmit({ name, email, ...(password ? { password } : {}), status, role_ids: roleIds }) }
   const toggleRole = (id: number) => setRoleIds(ids => ids.includes(id) ? ids.filter(current => current !== id) : [...ids, id])

@@ -22,7 +22,14 @@ class UserController extends Controller
     {
         $organization = $this->organization($request);
         $users = $organization->users()
-            ->wherePivot('status', 'active')
+            ->when($request->filled('search'), function ($query) use ($request): void {
+                $search = $request->string('search')->trim()->toString();
+                $query->where(function ($query) use ($search): void {
+                    $query->where('users.name', 'like', "%{$search}%")
+                        ->orWhere('users.email', 'like', "%{$search}%");
+                });
+            })
+            ->when($request->filled('status') && $request->string('status')->toString() !== 'all', fn ($query) => $query->wherePivot('status', $request->string('status')->toString()))
             ->latest('users.created_at')
             ->paginate($request->integer('per_page', 20));
 

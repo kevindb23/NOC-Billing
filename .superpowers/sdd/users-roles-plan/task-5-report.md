@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented the Users/Roles administration UI in the isolated `users-roles` worktree.
+Implemented the Users/Roles administration UI and Round 1 integration fixes in the isolated `users-roles` worktree.
 
 ## Delivered
 
@@ -12,16 +12,20 @@ Implemented the Users/Roles administration UI in the isolated `users-roles` work
 - Compact responsive tables with horizontal-scroll-safe containers, loading/error/empty states, pagination, confirmation for destructive actions, and reload-after-mutation.
 - Write-only password handling: edit forms clear the password field and never render stored password values.
 - Focused Vitest coverage for API path selection, page rendering, empty/error states, permission selection, role form opening, and password non-display.
+- Permission catalog entries now include database IDs while preserving the four authority groups and action order.
+- User listings now include active and inactive organization memberships by default, with server-side search and status filters; inactive rows expose Reactivate.
+- Login and `/auth/me` expose current organization permission names; Users/Roles navigation and CRUD actions are permission-aware while backend middleware remains authoritative.
+- Added regression coverage for permission IDs, auth permission state, inactive listing/search, frontend mutation payloads, navigation/action visibility, and reactivation.
 - Restored missing existing frontend dependencies required by the committed app and stylesheet: Base UI, Phosphor icons, class variance utilities, `cn`, Poppins, and JetBrains Mono font packages.
 
 ## Verification
 
-- `npm test` — 6 test files, 13 tests passed.
-- `npm run lint` — passed with existing/project warning-level rules; warnings include synchronous form/page state initialization effects and existing fast-refresh export warnings.
+- `npm test` — 6 test files, 15 tests passed.
+- `npm run lint` — passed with warning-level output only; remaining warnings are existing fast-refresh warnings plus non-blocking state-in-effect warnings in the app/pages.
 - `npm run build` — passed (`tsc -b` and Vite production build).
+- `php artisan test` — 45 tests, 244 assertions passed.
 - `git diff --check` — passed.
 
 ## Concerns
 
-- The backend user index currently returns active organization memberships only, so the Reactivate action is implemented for inactive records returned by a future/extended listing or detail flow; it is not reachable from the current active-only list response.
-- Lint remains warning-only for the existing UI conventions and the new forms/pages' state initialization effects; no lint errors remain.
+- Lint remains warning-only; no lint errors remain.

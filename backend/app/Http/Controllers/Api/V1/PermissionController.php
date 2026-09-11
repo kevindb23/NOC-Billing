@@ -17,7 +17,7 @@ class PermissionController extends Controller
             'System' => ['system', 'users', 'roles', 'audit-logs'],
         ];
         $actionOrder = ['view' => 0, 'create' => 1, 'update' => 2, 'delete' => 3, 'export' => 4];
-        $permissions = Permission::query()->get(['name']);
+        $permissions = Permission::query()->get(['id', 'name']);
 
         $groups = collect($groupDefinitions)->map(function (array $prefixes, string $group) use ($permissions, $actionOrder): array {
             $prefixOrder = array_flip($prefixes);
@@ -42,6 +42,7 @@ class PermissionController extends Controller
                     return ($prefixOrder[$leftPrefix] ?? PHP_INT_MAX) <=> ($prefixOrder[$rightPrefix] ?? PHP_INT_MAX);
                 })
                 ->map(fn (Permission $permission): array => [
+                    'id' => $permission->id,
                     'name' => $permission->name,
                     'action' => str($permission->name)->afterLast('.')->toString(),
                 ])

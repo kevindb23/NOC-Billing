@@ -16,7 +16,7 @@ class UserCrudTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_user_list_is_limited_to_active_memberships_in_the_requested_organization(): void
+    public function test_user_list_includes_active_and_inactive_memberships_in_the_requested_organization(): void
     {
         [$actor, $organization] = $this->actorWithPermission('users.view');
         $visible = User::factory()->create(['name' => 'Visible User']);
@@ -33,7 +33,22 @@ class UserCrudTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.data.0.membership_status', 'active')
             ->assertJsonStructure(['data' => ['data' => [['public_id', 'name', 'email', 'status', 'membership_status', 'roles', 'created_at', 'updated_at']], 'current_page', 'per_page']]);
-        $this->assertSame(['Visible User'], collect($response->json('data.data'))->where('name', 'Visible User')->pluck('name')->all());
+        $this->assertSame(['Visible User', 'Inactive Member'], collect($response->json('data.data'))->whereIn('name', ['Visible User', 'Inactive Member'])->pluck('name')->all());
+    }
+
+    public function test_user_list_can_search_name_or_email(): void
+    {
+        [$actor, $organization] = $this->actorWithPermission('users.view');
+        $matching = User::factory()->create(['name' => 'Searchable User', 'email' => 'match@example.com']);
+        $other = User::factory()->create(['name' => 'Other User', 'email' => 'other@example.com']);
+        $organization->users()->attach($matching, ['status' => 'inactive']);
+        $organization->users()->attach($other, ['status' => 'active']);
+        Sanctum::actingAs($actor);
+
+        $response = $this->organizationRequest($organization)->getJson('/api/v1/users?search=match');
+
+        $response->assertOk();
+        $this->assertSame(['Searchable User'], collect($response->json('data.data'))->pluck('name')->all());
     }
 
     public function test_user_show_returns_role_details_for_the_active_organization_membership(): void
@@ -148,7 +163,8 @@ class UserCrudTest extends TestCase
 
         $this->organizationRequest($organization)->deleteJson('/api/v1/users/'.$user->public_id)->assertOk();
         $this->organizationRequest($organization)->getJson('/api/v1/users/'.$user->public_id)->assertNotFound();
-        $this->assertNotContains($user->public_id, collect($this->organizationRequest($organization)->getJson('/api/v1/users')->json('data.data'))->pluck('public_id')->all());
+        $listedInactive = collect($this->organizationRequest($organization)->getJson('/api/v1/users')->json('data.data'))->firstWhere('public_id', $user->public_id);
+        $this->assertSame('inactive', $listedInactive['membership_status']);
 
         $response = $this->organizationRequest($organization)->putJson('/api/v1/users/'.$user->public_id, [
             'status' => 'active', 'role_ids' => [$role->id],

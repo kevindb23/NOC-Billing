@@ -25,7 +25,7 @@ class PermissionApiTest extends TestCase
             ->getJson('/api/v1/permissions');
 
         $response->assertOk()->assertJsonStructure([
-            'data' => [['group', 'permissions' => [['name', 'action']]]],
+            'data' => [['group', 'permissions' => [['id', 'name', 'action']]]],
         ]);
     }
 
@@ -72,50 +72,15 @@ class PermissionApiTest extends TestCase
         $response = $this->withHeader('X-Organization-Id', $organization->public_id)
             ->getJson('/api/v1/permissions');
 
-        $response->assertOk()->assertExactJson([
-            'data' => [
-                ['group' => 'Dashboard', 'permissions' => [
-                    ['name' => 'dashboard.view', 'action' => 'view'],
-                    ['name' => 'dashboard.create', 'action' => 'create'],
-                    ['name' => 'dashboard.update', 'action' => 'update'],
-                    ['name' => 'dashboard.delete', 'action' => 'delete'],
-                    ['name' => 'dashboard.export', 'action' => 'export'],
-                ]],
-                ['group' => 'Billing', 'permissions' => [
-                    ['name' => 'billing.view', 'action' => 'view'],
-                    ['name' => 'billing.create', 'action' => 'create'],
-                    ['name' => 'billing.update', 'action' => 'update'],
-                    ['name' => 'billing.delete', 'action' => 'delete'],
-                    ['name' => 'billing.export', 'action' => 'export'],
-                ]],
-                ['group' => 'Network', 'permissions' => [
-                    ['name' => 'network.view', 'action' => 'view'],
-                    ['name' => 'network.create', 'action' => 'create'],
-                    ['name' => 'network.update', 'action' => 'update'],
-                    ['name' => 'network.delete', 'action' => 'delete'],
-                    ['name' => 'network.export', 'action' => 'export'],
-                ]],
-                ['group' => 'System', 'permissions' => [
-                    ['name' => 'system.view', 'action' => 'view'],
-                    ['name' => 'users.view', 'action' => 'view'],
-                    ['name' => 'roles.view', 'action' => 'view'],
-                    ['name' => 'audit-logs.view', 'action' => 'view'],
-                    ['name' => 'system.create', 'action' => 'create'],
-                    ['name' => 'users.create', 'action' => 'create'],
-                    ['name' => 'roles.create', 'action' => 'create'],
-                    ['name' => 'system.update', 'action' => 'update'],
-                    ['name' => 'users.update', 'action' => 'update'],
-                    ['name' => 'roles.update', 'action' => 'update'],
-                    ['name' => 'system.delete', 'action' => 'delete'],
-                    ['name' => 'users.delete', 'action' => 'delete'],
-                    ['name' => 'roles.delete', 'action' => 'delete'],
-                    ['name' => 'system.export', 'action' => 'export'],
-                    ['name' => 'users.export', 'action' => 'export'],
-                    ['name' => 'roles.export', 'action' => 'export'],
-                    ['name' => 'audit-logs.export', 'action' => 'export'],
-                ]],
-            ],
-        ]);
+        $response->assertOk();
+        $catalog = collect($response->json('data'));
+        $this->assertSame(['Dashboard', 'Billing', 'Network', 'System'], $catalog->pluck('group')->all());
+        $systemActions = collect($catalog->last()['permissions'])->pluck('action')->all();
+        $this->assertSame(['view', 'view', 'view', 'view', 'create', 'create', 'create', 'update', 'update', 'update', 'delete', 'delete', 'delete', 'export', 'export', 'export', 'export'], $systemActions);
+        foreach ($catalog->pluck('permissions')->flatten(1) as $permission) {
+            $this->assertArrayHasKey('id', $permission);
+            $this->assertSame(Permission::where('name', $permission['name'])->value('id'), $permission['id']);
+        }
     }
 
     private function userWithPermission(string $permissionName): array

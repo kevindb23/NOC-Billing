@@ -109,9 +109,9 @@ function App() {
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); localStorage.setItem('isp-theme', theme) }, [theme])
   useEffect(() => { localStorage.setItem('isp-view', view) }, [view])
   useEffect(() => {
-    if (!session || session.permissions) return
+    if (!session?.token) return
     void apiRequest<{ data: { permissions: string[] } }>('/auth/me', {}, session.token).then(response => setSession(current => current ? { ...current, permissions: response.data.permissions } : current)).catch(() => undefined)
-  }, [session])
+  }, [session?.token])
   useEffect(() => {
     if (view === 'Users' && !hasPermission(session?.permissions, 'users.view')) setView('overview')
     if (view === 'Roles' && !hasPermission(session?.permissions, 'roles.view')) setView('overview')

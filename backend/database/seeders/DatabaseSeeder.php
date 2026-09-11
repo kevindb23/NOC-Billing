@@ -4,8 +4,10 @@ namespace Database\Seeders;
 
 use App\Models\BillingCycle;
 use App\Models\Organization;
+use App\Models\Permission;
 use App\Models\Plan;
 use App\Models\PlanVersion;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -25,6 +27,14 @@ class DatabaseSeeder extends Seeder
             'status' => 'active',
         ]);
         $organization->users()->syncWithoutDetaching([$user->id => ['is_default' => true, 'status' => 'active']]);
+
+        $administrator = Role::firstOrCreate([
+            'organization_id' => $organization->id,
+            'name' => 'Administrator',
+        ], ['guard_name' => 'api']);
+        $administrator->permissions()->sync(Permission::query()->pluck('id'));
+        $administrator->users()->syncWithoutDetaching([$user->id => ['organization_id' => $organization->id]]);
+
         $cycle = BillingCycle::firstOrCreate(['organization_id' => $organization->id, 'name' => 'Monthly'], ['interval_unit' => 'month', 'interval_count' => 1, 'billing_day' => 1, 'grace_days' => 7, 'status' => 'active']);
         $plan = Plan::firstOrCreate(['organization_id' => $organization->id, 'code' => 'HOME-100'], ['billing_cycle_id' => $cycle->id, 'name' => 'Home 100', 'service_type' => 'internet', 'status' => 'active']);
         PlanVersion::firstOrCreate(['organization_id' => $organization->id, 'plan_id' => $plan->id, 'version' => 1], [

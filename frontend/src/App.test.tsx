@@ -2,6 +2,9 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { apiRequest } from './lib/api'
+
+vi.mock('./lib/api', () => ({ apiRequest: vi.fn() }))
 
 vi.mock('./components/DashboardPage', () => ({ DashboardPage: () => <h1>Overview page</h1> }))
 vi.mock('./components/UsersPage', () => ({ UsersPage: () => <h1>Users page</h1> }))
@@ -11,6 +14,7 @@ describe('billing application entry point', () => {
   beforeEach(() => {
     cleanup()
     localStorage.clear()
+    vi.mocked(apiRequest).mockResolvedValue({ data: { permissions: [] } })
   })
 
   it('presents the billing operations sign-in surface', () => {
@@ -50,5 +54,15 @@ describe('billing application entry point', () => {
     expect(screen.queryByRole('button', { name: 'Users' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Roles' })).toBeNull()
     expect(screen.getByText('ISP billing / Dashboard')).toBeTruthy()
+  })
+
+  it('refreshes stale stored permissions after the administrator role is provisioned', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ data: { permissions: ['users.view', 'roles.view'] } })
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Admin', email: 'admin@example.com' }, permissions: [] }))
+    localStorage.setItem('isp-expanded-sections', JSON.stringify({ System: true }))
+    render(<App />)
+
+    expect(await screen.findAllByRole('button', { name: 'Users' })).not.toHaveLength(0)
+    expect(await screen.findAllByRole('button', { name: 'Roles' })).not.toHaveLength(0)
   })
 })

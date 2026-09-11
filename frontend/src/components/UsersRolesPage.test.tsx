@@ -107,6 +107,14 @@ describe('users and roles administration', () => {
     expect(await screen.findByText('Users unavailable')).toBeTruthy()
   })
 
+  it('renders users for users.view-only operators without loading role options', async () => {
+    mockedUsers.listUsers.mockResolvedValue({ data: { data: [{ public_id: 'usr_view', name: 'View Only', email: 'view@example.com', status: 'active', membership_status: 'active', membership_is_default: false, roles: [] }], current_page: 1, last_page: 1, total: 1 } })
+    render(<UsersPage token="token" permissions={['users.view']} />)
+
+    expect(await screen.findByText('View Only')).toBeTruthy()
+    expect(mockedUsers.listRoles).not.toHaveBeenCalled()
+  })
+
   it('toggles permission groups through controlled checkbox changes', () => {
     const onChange = vi.fn()
     render(<PermissionMatrix groups={[{ group: 'System', permissions: [{ id: 1, name: 'users.view', action: 'view' }, { id: 2, name: 'users.update', action: 'update' }] }]} selectedIds={[1]} onChange={onChange} />)

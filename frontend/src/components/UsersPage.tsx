@@ -23,6 +23,7 @@ export function UsersPage({ token, permissions }: { token?: string; permissions?
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<{ mode: 'create' | 'edit'; user?: User } | null>(null)
   const canView = hasPermission(permissions, 'users.view')
+  const canViewRoles = hasPermission(permissions, 'roles.view')
   const canCreate = hasPermission(permissions, 'users.create')
   const canUpdate = hasPermission(permissions, 'users.update')
   const canDelete = hasPermission(permissions, 'users.delete')
@@ -32,16 +33,25 @@ export function UsersPage({ token, permissions }: { token?: string; permissions?
     setLoading(true)
     setError('')
     try {
-      const [userResponse, roleResponse] = await Promise.all([listUsers(token, page, search, status), listRoles(token, 1)])
+      const userResponse = await listUsers(token, page, search, status)
       setUsers(userResponse.data.data)
       setLastPage(userResponse.data.last_page)
-      setRoles(roleResponse.data.data)
+      if (canViewRoles) {
+        try {
+          const roleResponse = await listRoles(token, 1)
+          setRoles(roleResponse.data.data)
+        } catch {
+          setRoles([])
+        }
+      } else {
+        setRoles([])
+      }
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : 'Unable to load users.')
     } finally {
       setLoading(false)
     }
-  }, [canView, page, search, status, token])
+  }, [canView, canViewRoles, page, search, status, token])
 
   useEffect(() => { void load() }, [load])
   const close = () => { setForm(null); setFormError('') }

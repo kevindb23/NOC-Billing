@@ -12,5 +12,9 @@ export const notify = {
   info: (message: string) => toast.info(message),
   warning: (message: string) => toast.warning(message),
   loading: (message: string) => toast.loading(message),
-  promise: <T>(promise: Promise<T>, messages: { loading: string; success: string; error: string }) => toast.promise(promise, messages),
+  promise: async <T>(promise: Promise<T>, messages: { loading: string; success: string; error: string }): Promise<T> => {
+    const result = toast.promise(promise, messages)
+    if (typeof result === 'object' && result !== null && 'unwrap' in result) return result.unwrap() as Promise<T>
+    return promise
+  },
 }

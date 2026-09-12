@@ -41,6 +41,7 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { apiRequest } from './lib/api'
+import { getErrorMessage, notify } from './lib/notifications'
 import { hasPermission } from './lib/usersRoles'
 import { readStoredView, type View } from './lib/viewState'
 import { DashboardPage } from './components/DashboardPage'
@@ -128,7 +129,7 @@ function App() {
     if (session?.is_superadmin === false && view === 'Branding' && !hasPermission(session?.permissions, 'branding.view')) setView('overview')
   }, [session?.is_superadmin, session?.permissions, view])
   const signIn = (next: Session) => { localStorage.setItem('isp-session', JSON.stringify(next)); setSession(next); setError('') }
-  const signOut = async () => { if (session) await apiRequest('/auth/logout', { method: 'POST' }, session.token).catch(() => undefined); localStorage.removeItem('isp-session'); setSession(null) }
+  const signOut = async () => { if (session) await apiRequest('/auth/logout', { method: 'POST' }, session.token).catch(() => undefined); localStorage.removeItem('isp-session'); setSession(null); notify.success('Signed out.') }
 
   return <ConfirmProvider>
     <Toaster position="top-right" theme={theme} closeButton richColors={false} />
@@ -142,8 +143,8 @@ function Login({ onSignedIn, error, setError }: { onSignedIn: (s: Session) => vo
   const [loading, setLoading] = useState(false)
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setLoading(true); setError('')
-    try { const response = await apiRequest<{ data: Session }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); onSignedIn(response.data) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Unable to sign in.') }
+    try { const response = await apiRequest<{ data: Session }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); onSignedIn(response.data); notify.success('Signed in successfully.') }
+    catch (e) { const message = getErrorMessage(e, 'Unable to sign in.'); setError(message); notify.error(message) }
     finally { setLoading(false) }
   }
 

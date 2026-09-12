@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { getErrorMessage, notify } from '@/lib/notifications'
 import { type BrandingValues, updateBranding } from '@/lib/branding'
 import { hasPermission } from '@/lib/usersRoles'
 
@@ -39,9 +40,9 @@ export function BrandingPage({ token, permissions, branding, onSaved }: { token?
     if (!canUpdate) return
     setSaving(true); setError(''); setSaved(false)
     try {
-      const response = await updateBranding(values, token)
+      const response = await notify.promise(updateBranding(values, token), { loading: 'Saving branding…', success: 'Branding saved.', error: 'Unable to save branding.' })
       setValues(response.data.branding); onSaved(response.data.branding); setSaved(true)
-    } catch (exception) { setError(exception instanceof Error ? exception.message : 'Unable to save branding.') }
+    } catch (exception) { setError(getErrorMessage(exception, 'Unable to save branding.')) }
     finally { setSaving(false) }
   }
 

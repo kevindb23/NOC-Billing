@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { getErrorMessage, notify } from '@/lib/notifications'
 import { CrudModal, type CrudField } from './CrudModal'
 import { TableActions } from './TableActions'
 import { apiRequest } from '../lib/api'
@@ -56,18 +57,18 @@ export function ResourceTablePage({ session, view }: { session: Session; view: V
   const [modalError, setModalError] = useState('')
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState<ModalState>(null)
-  const load = useCallback(() => apiRequest<any>(`/${config.endpoint}`, {}, session.token).then(response => setRows(response.data.data)).catch(exception => setError(exception instanceof Error ? exception.message : 'Unable to load records.')), [config.endpoint, session.token])
+  const load = useCallback(() => apiRequest<any>(`/${config.endpoint}`, {}, session.token).then(response => setRows(response.data.data)).catch(exception => setError(getErrorMessage(exception, 'Unable to load records.'))), [config.endpoint, session.token])
   useEffect(() => { void load() }, [load])
   const close = () => { setModal(null); setModalError('') }
   const submit = async (values: Record<string, string>) => {
     if (!modal || modal.mode === 'view') return
     setLoading(true); setModalError('')
-    try { await apiRequest(modal.mode === 'create' ? `/${config.endpoint}` : `/${config.endpoint}/${rowId(view, modal.row!)}`, { method: modal.mode === 'create' ? 'POST' : 'PUT', body: JSON.stringify(values) }, session.token); close(); await load() }
-    catch (exception) { setModalError(exception instanceof Error ? exception.message : 'Unable to save this record.') }
+    try { const operation = apiRequest(modal.mode === 'create' ? `/${config.endpoint}` : `/${config.endpoint}/${rowId(view, modal.row!)}`, { method: modal.mode === 'create' ? 'POST' : 'PUT', body: JSON.stringify(values) }, session.token); await notify.promise(operation, { loading: modal.mode === 'create' ? `Creating ${config.title.toLowerCase().replace(/s$/, '')}…` : `Saving ${config.title.toLowerCase().replace(/s$/, '')}…`, success: modal.mode === 'create' ? 'Record created.' : 'Record updated.', error: 'Unable to save this record.' }); close(); await load() }
+    catch (exception) { setModalError(getErrorMessage(exception, 'Unable to save this record.')) }
     finally { setLoading(false) }
   }
-  const archive = async (row: Row) => { try { await apiRequest(`/${config.endpoint}/${rowId(view, row)}`, { method: 'DELETE' }, session.token); await load() } catch (exception) { setError(exception instanceof Error ? exception.message : 'Unable to archive this record.') } }
-  const voidRecord = async (row: Row) => { try { await apiRequest(`/${config.endpoint}/${rowId(view, row)}/void`, { method: 'POST' }, session.token); await load() } catch (exception) { setError(exception instanceof Error ? exception.message : 'Unable to void this record.') } }
+  const archive = async (row: Row) => { try { await notify.promise(apiRequest(`/${config.endpoint}/${rowId(view, row)}`, { method: 'DELETE' }, session.token), { loading: 'Archiving record…', success: 'Record archived.', error: 'Unable to archive this record.' }); await load() } catch (exception) { setError(getErrorMessage(exception, 'Unable to archive this record.')) } }
+  const voidRecord = async (row: Row) => { try { await notify.promise(apiRequest(`/${config.endpoint}/${rowId(view, row)}/void`, { method: 'POST' }, session.token), { loading: 'Voiding record…', success: 'Record voided.', error: 'Unable to void this record.' }); await load() } catch (exception) { setError(getErrorMessage(exception, 'Unable to void this record.')) } }
   const modalFields = modal?.mode === 'view' ? [...config.editFields, ...(view === 'invoices' ? [{ name: 'invoice_number', label: 'Invoice number' }, { name: 'total', label: 'Total' }] : view === 'payments' ? [{ name: 'payment_number', label: 'Payment number' }, { name: 'amount', label: 'Amount' }] : [])] : modal?.mode === 'create' ? config.createFields : config.editFields
   const modalValues = modal?.row ? rowValues(view, modal.row) : {}
   const isFinancial = view === 'invoices' || view === 'payments'

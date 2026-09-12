@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { getErrorMessage, notify } from '@/lib/notifications'
 import { createUser, deactivateUser, hasPermission, listRoles, listUsers, reactivateUser, updateUser, type Role, type User, type UserRequest } from '@/lib/usersRoles'
+import { useConfirm } from './ConfirmProvider'
 import { UserForm } from './UserForm'
 
 type UserStatusFilter = 'all' | 'active' | 'inactive'
@@ -27,6 +29,7 @@ export function UsersPage({ token, permissions }: { token?: string; permissions?
   const canCreate = hasPermission(permissions, 'users.create')
   const canUpdate = hasPermission(permissions, 'users.update')
   const canDelete = hasPermission(permissions, 'users.delete')
+  const confirm = useConfirm()
 
   const load = useCallback(async () => {
     if (!canView) return
@@ -47,7 +50,7 @@ export function UsersPage({ token, permissions }: { token?: string; permissions?
         setRoles([])
       }
     } catch (exception) {
-      setError(exception instanceof Error ? exception.message : 'Unable to load users.')
+      setError(getErrorMessage(exception, 'Unable to load users.'))
     } finally {
       setLoading(false)
     }
@@ -58,21 +61,23 @@ export function UsersPage({ token, permissions }: { token?: string; permissions?
   const submit = async (payload: UserRequest) => {
     setSaving(true); setFormError('')
     try {
-      if (form?.mode === 'create') await createUser(payload, token)
-      else if (form?.user) await updateUser(form.user.public_id, payload, token)
+      const operation = form?.mode === 'create' ? createUser(payload, token) : form?.user ? updateUser(form.user.public_id, payload, token) : Promise.reject(new Error('No user selected.'))
+      await notify.promise(operation, { loading: form?.mode === 'create' ? 'Creating user…' : 'Saving user…', success: form?.mode === 'create' ? 'User created.' : 'User updated.', error: 'Unable to save user.' })
       close(); await load()
-    } catch (exception) { setFormError(exception instanceof Error ? exception.message : 'Unable to save user.') }
+    } catch (exception) { setFormError(getErrorMessage(exception, 'Unable to save user.')) }
     finally { setSaving(false) }
   }
   const deactivate = async (user: User) => {
-    if (!window.confirm(`Deactivate ${user.name}?`)) return
-    try { await deactivateUser(user.public_id, token); await load() }
-    catch (exception) { setError(exception instanceof Error ? exception.message : 'Unable to deactivate user.') }
+    const confirmed = await confirm({ title: `Deactivate ${user.name}?`, description: 'The account will remain in the organization but will no longer be active.', confirmLabel: 'Deactivate', destructive: true })
+    if (!confirmed) return
+    try { await notify.promise(deactivateUser(user.public_id, token), { loading: 'Deactivating user…', success: 'User deactivated.', error: 'Unable to deactivate user.' }); await load() }
+    catch (exception) { setError(getErrorMessage(exception, 'Unable to deactivate user.')) }
   }
   const reactivate = async (user: User) => {
-    if (!window.confirm(`Reactivate ${user.name}?`)) return
-    try { await reactivateUser(user.public_id, token); await load() }
-    catch (exception) { setError(exception instanceof Error ? exception.message : 'Unable to reactivate user.') }
+    const confirmed = await confirm({ title: `Reactivate ${user.name}?`, description: 'The account will be available for organization access again.', confirmLabel: 'Reactivate' })
+    if (!confirmed) return
+    try { await notify.promise(reactivateUser(user.public_id, token), { loading: 'Reactivating user…', success: 'User reactivated.', error: 'Unable to reactivate user.' }); await load() }
+    catch (exception) { setError(getErrorMessage(exception, 'Unable to reactivate user.')) }
   }
   const changeStatus = (next: UserStatusFilter) => { setPage(1); setStatus(next) }
   const changeSearch = (next: string) => { setPage(1); setSearch(next) }

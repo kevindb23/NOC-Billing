@@ -14,7 +14,7 @@ class PermissionController extends Controller
             'Dashboard' => ['dashboard'],
             'Billing' => ['billing'],
             'Network' => ['network'],
-            'System' => ['system', 'users', 'roles', 'audit-logs'],
+            'System' => ['system', 'users', 'roles', 'branding', 'audit-logs'],
         ];
         $actionOrder = ['view' => 0, 'create' => 1, 'update' => 2, 'delete' => 3, 'export' => 4];
         $permissions = Permission::query()->get(['id', 'name']);

@@ -76,7 +76,7 @@ class PermissionApiTest extends TestCase
         $catalog = collect($response->json('data'));
         $this->assertSame(['Dashboard', 'Billing', 'Network', 'System'], $catalog->pluck('group')->all());
         $systemActions = collect($catalog->last()['permissions'])->pluck('action')->all();
-        $this->assertSame(['view', 'view', 'view', 'view', 'create', 'create', 'create', 'update', 'update', 'update', 'delete', 'delete', 'delete', 'export', 'export', 'export', 'export'], $systemActions);
+        $this->assertSame(['view', 'view', 'view', 'view', 'view', 'create', 'create', 'create', 'update', 'update', 'update', 'update', 'delete', 'delete', 'delete', 'export', 'export', 'export', 'export'], $systemActions);
         foreach ($catalog->pluck('permissions')->flatten(1) as $permission) {
             $this->assertArrayHasKey('id', $permission);
             $this->assertSame(Permission::where('name', $permission['name'])->value('id'), $permission['id']);

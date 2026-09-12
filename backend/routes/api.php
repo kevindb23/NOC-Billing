@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\BrandingController;
 use App\Http\Controllers\Api\V1\BillingController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\PermissionController;
@@ -24,6 +25,8 @@ Route::prefix('v1')->middleware(['auth:sanctum', ResolveOrganization::class])->g
     Route::put('roles/{id}', [RoleController::class, 'update'])->middleware('permission:roles.update');
     Route::delete('roles/{id}', [RoleController::class, 'destroy'])->middleware('permission:roles.delete');
     Route::get('audit-logs', [AuditLogController::class, 'index']);
+    Route::get('branding', [BrandingController::class, 'show'])->middleware('permission:branding.view');
+    Route::put('branding', [BrandingController::class, 'update'])->middleware('permission:branding.update');
     Route::get('users', [UserController::class, 'index'])->middleware('permission:users.view');
     Route::post('users', [UserController::class, 'store'])->middleware('permission:users.create');
     Route::get('users/{publicId}', [UserController::class, 'show'])->middleware('permission:users.view');

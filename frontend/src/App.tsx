@@ -43,6 +43,7 @@ import { apiRequest } from './lib/api'
 import { hasPermission } from './lib/usersRoles'
 import { readStoredView, type View } from './lib/viewState'
 import { DashboardPage } from './components/DashboardPage'
+import { BrandingPage } from './components/BrandingPage'
 import { NetworkModulePage } from './components/NetworkModulePage'
 import { ResourceTablePage } from './components/ResourceTablePage'
 import { SubscribersPage } from './components/SubscribersPage'
@@ -50,8 +51,9 @@ import { RolesPage } from './components/RolesPage'
 import { UsersPage } from './components/UsersPage'
 import { networkModules, type NetworkModule } from './lib/networkModules'
 import { systemModules, type SystemModule } from './lib/systemModules'
+import type { BrandingValues } from './lib/branding'
 
-type Session = { token: string; user: { name: string; email: string }; permissions?: string[] }
+type Session = { token: string; user: { name: string; email: string }; permissions?: string[]; branding?: BrandingValues }
 type AppView = View | NetworkModule | SystemModule
 type NavSection = 'Dashboard' | 'Billing' | 'Network' | 'System'
 type NavItem = { key: AppView; label: string; section: NavSection }
@@ -105,8 +107,19 @@ function App() {
   })
   const [view, setView] = useState<AppView>(readStoredAppView)
   const [error, setError] = useState('')
-  useEffect(() => { document.title = BRAND_NAME }, [])
+  useEffect(() => { document.title = session?.branding?.organization_name || BRAND_NAME }, [session?.branding?.organization_name])
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); localStorage.setItem('isp-theme', theme) }, [theme])
+  useEffect(() => {
+    const root = document.documentElement
+    const values: Record<string, string | null | undefined> = {
+      '--primary': session?.branding?.primary_color,
+      '--ring': session?.branding?.primary_color,
+      '--sidebar-primary': session?.branding?.primary_color,
+      '--accent': session?.branding?.accent_color,
+      '--sidebar-accent': session?.branding?.accent_color,
+    }
+    Object.entries(values).forEach(([property, value]) => value ? root.style.setProperty(property, value) : root.style.removeProperty(property))
+  }, [session?.branding?.primary_color, session?.branding?.accent_color])
   useEffect(() => { localStorage.setItem('isp-view', view) }, [view])
   useEffect(() => {
     if (!session?.token) return
@@ -115,12 +128,13 @@ function App() {
   useEffect(() => {
     if (view === 'Users' && !hasPermission(session?.permissions, 'users.view')) setView('overview')
     if (view === 'Roles' && !hasPermission(session?.permissions, 'roles.view')) setView('overview')
+    if (view === 'Branding' && !hasPermission(session?.permissions, 'branding.view')) setView('overview')
   }, [session?.permissions, view])
   const signIn = (next: Session) => { localStorage.setItem('isp-session', JSON.stringify(next)); setSession(next); setError('') }
   const signOut = async () => { if (session) await apiRequest('/auth/logout', { method: 'POST' }, session.token).catch(() => undefined); localStorage.removeItem('isp-session'); setSession(null) }
 
   if (!session) return <Login onSignedIn={signIn} error={error} setError={setError} />
-  return <Shell session={session} view={view} setView={setView} signOut={signOut} theme={theme} setTheme={setTheme} />
+  return <Shell session={session} view={view} setView={setView} signOut={signOut} theme={theme} setTheme={setTheme} onBrandingSaved={branding => setSession(current => current ? { ...current, branding } : current)} />
 }
 
 function Login({ onSignedIn, error, setError }: { onSignedIn: (s: Session) => void; error: string; setError: (s: string) => void }) {
@@ -161,7 +175,7 @@ function Login({ onSignedIn, error, setError }: { onSignedIn: (s: Session) => vo
   </main>
 }
 
-function BrandMark({ className }: { className?: string }) { return <div className={cn('grid size-9 shrink-0 place-items-center bg-primary text-xs font-bold text-primary-foreground', className)}>{BRAND_MARK}</div> }
+function BrandMark({ className, mark = BRAND_MARK, logoUrl, primary }: { className?: string; mark?: string; logoUrl?: string | null; primary?: string | null }) { return <div className={cn('grid size-9 shrink-0 place-items-center overflow-hidden bg-primary text-xs font-bold text-primary-foreground', className)} style={primary ? { backgroundColor: primary } : undefined}>{logoUrl ? <img src={logoUrl} alt="" className="size-7 object-contain" /> : mark}</div> }
 
 function NetworkIllustration() {
   return <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[56%] min-h-80 text-foreground/75" aria-hidden="true">
@@ -193,10 +207,19 @@ function NetworkIllustration() {
   </div>
 }
 
-function Shell({ session, view, setView, signOut, theme, setTheme }: { session: Session; view: AppView; setView: (v: AppView) => void; signOut: () => void; theme: 'light' | 'dark'; setTheme: (theme: 'light' | 'dark') => void }) {
+function Shell({ session, view, setView, signOut, theme, setTheme, onBrandingSaved }: { session: Session; view: AppView; setView: (v: AppView) => void; signOut: () => void; theme: 'light' | 'dark'; setTheme: (theme: 'light' | 'dark') => void; onBrandingSaved: (branding: BrandingValues) => void }) {
   const current = nav.find(item => item.key === view)
-  const visibleNav = nav.filter(item => (item.key !== 'Users' && item.key !== 'Roles') || hasPermission(session.permissions, item.key === 'Users' ? 'users.view' : 'roles.view'))
+  const visibleNav = nav.filter(item => {
+    if (item.key === 'Users') return hasPermission(session.permissions, 'users.view')
+    if (item.key === 'Roles') return hasPermission(session.permissions, 'roles.view')
+    if (item.key === 'Branding') return hasPermission(session.permissions, 'branding.view')
+    return true
+  })
   const activeSection = current?.section ?? 'Dashboard'
+  const brandName = session.branding?.short_name || session.branding?.organization_name || BRAND_NAME
+  const brandMark = session.branding?.brand_mark || BRAND_MARK
+  const brandLogo = session.branding?.logo_url
+  const brandPrimary = session.branding?.primary_color
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('isp-sidebar-collapsed') === 'true')
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -228,11 +251,11 @@ function Shell({ session, view, setView, signOut, theme, setTheme }: { session: 
   return <div className={cn('billing-app min-h-screen bg-muted/30 text-foreground md:grid', sidebarCollapsed ? 'md:grid-cols-[4.5rem_1fr]' : 'md:grid-cols-[15rem_1fr]')}>
     <div className="billing-header-actions fixed right-52 top-4 z-20 hidden items-center gap-1 md:flex"><Button variant="ghost" size="icon" className="rounded-xl" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <SunIcon /> : <MoonIcon />}</Button><Button variant="ghost" size="icon" className="rounded-xl" aria-label="Open notifications" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(true)}><BellIcon /></Button></div>
     <aside className={cn('billing-sidebar relative hidden bg-sidebar text-sidebar-foreground md:flex md:flex-col', sidebarCollapsed && 'items-center')}>
-      <div className={cn('relative flex h-16 w-full items-center px-5', sidebarCollapsed ? 'justify-center' : 'gap-3')}><BrandMark />{!sidebarCollapsed && <div><p className="font-heading text-sm font-semibold tracking-tight">{BRAND_NAME}</p><p className="text-[10px] text-sidebar-foreground/55">Billing operations</p></div>}</div>
+      <div className={cn('relative flex h-16 w-full items-center px-5', sidebarCollapsed ? 'justify-center' : 'gap-3')}><BrandMark mark={brandMark} logoUrl={brandLogo} primary={brandPrimary} />{!sidebarCollapsed && <div><p className="font-heading text-sm font-semibold tracking-tight">{brandName}</p><p className="text-[10px] text-sidebar-foreground/55">Billing operations</p></div>}</div>
       <nav className={cn("mt-5 flex flex-1 flex-col gap-4 overflow-y-auto", sidebarCollapsed ? "w-full px-2" : "px-3")} aria-label="Primary navigation">{navSections.map(section => <div className="flex flex-col gap-1" key={section}>{section === "Dashboard" ? <p className={cn("px-3 pb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/45", sidebarCollapsed && "sr-only")}>Dashboard</p> : <button type="button" className={cn("flex items-center justify-between px-3 pb-1 text-left text-[10px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground/75", sidebarCollapsed && "sr-only")} onClick={() => toggleSection(section)} aria-expanded={expandedSections[section]}><span>{section}</span><CaretRightIcon size={12} className={cn("transition-transform", expandedSections[section] && "rotate-90")} aria-hidden="true" /></button>}{(section === "Dashboard" || expandedSections[section]) && visibleNav.filter(item => item.section === section).map(item => <Button key={item.key} variant="ghost" className={cn("w-full justify-start gap-2.5 rounded-xl px-3 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground", sidebarCollapsed && "justify-center px-2", view === item.key && "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground")} onClick={() => selectNavItem(item)} aria-current={view === item.key ? "page" : undefined} title={sidebarCollapsed ? item.label : undefined}><NavIcon name={item.key} /><span className={sidebarCollapsed ? "sr-only" : undefined}>{item.label}</span></Button>)}</div>)}</nav>
       <div className={cn('m-3 mt-3 w-full p-0 pt-3', sidebarCollapsed && 'px-2')}><Button variant="ghost" className={cn('w-full justify-start gap-2.5 rounded-xl px-3 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground', sidebarCollapsed && 'justify-center px-2')} onClick={signOut} title={sidebarCollapsed ? 'Sign out' : undefined}><SignOutIcon data-icon="inline-start" /><span className={sidebarCollapsed ? 'sr-only' : undefined}>Sign out</span></Button>{!sidebarCollapsed && <p className="px-3 pt-3 text-[10px] text-sidebar-foreground/40">v0.2 billing foundation</p>}</div>
 </aside>
-    <main className="min-w-0"><header className="billing-header sticky top-0 z-10 flex min-h-16 items-center justify-between px-5 backdrop-blur sm:px-8"><div className="flex items-center gap-1.5"><div className="md:hidden"><BrandMark /></div><Button variant="ghost" size="icon-sm" className="hidden text-muted-foreground hover:bg-muted hover:text-foreground md:inline-flex md:size-6" onClick={toggleSidebar} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><SidebarSimpleIcon weight="bold" /></Button><Separator orientation="vertical" className="hidden h-5 md:block" /><p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">ISP billing / {current?.section}</p></div><div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="rounded-xl" aria-label="Open notifications" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(true)}><BellIcon /></Button><Separator orientation="vertical" className="h-5" /><button type="button" className="billing-profile-trigger flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/70" aria-expanded={profileOpen} aria-haspopup="dialog" onClick={() => setProfileOpen(current => !current)}><Avatar size="sm"><AvatarFallback>{session.user.name.slice(0, 1).toUpperCase()}</AvatarFallback></Avatar><span className="hidden text-xs font-medium sm:block">{session.user.name}</span></button></div></header><nav className="flex gap-1 overflow-x-auto bg-sidebar p-2 text-sidebar-foreground md:hidden" aria-label="Mobile navigation">{visibleNav.map(item => <Button key={item.key} variant="ghost" className={cn('shrink-0 gap-2 rounded-xl text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground', view === item.key && 'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground')} onClick={() => selectNavItem(item)} aria-current={view === item.key ? 'page' : undefined}><NavIcon name={item.key} />{item.label}</Button>)}</nav><div className="billing-content billing-canvas mx-auto flex w-full max-w-[1680px] flex-col gap-6 px-4 pb-4 pt-0 sm:px-6 sm:pb-6 sm:pt-0">{view === 'overview' ? <DashboardPage session={session} /> : view === 'subscribers' ? <SubscribersPage session={session} /> : view === 'Users' ? <UsersPage token={session.token} permissions={session.permissions} /> : view === 'Roles' ? <RolesPage token={session.token} permissions={session.permissions} /> : isModuleView(view) ? <NetworkModulePage module={view} section={current?.section} /> : <ResourceTablePage session={session} view={view} />}</div></main>
+    <main className="min-w-0"><header className="billing-header sticky top-0 z-10 flex min-h-16 items-center justify-between px-5 backdrop-blur sm:px-8"><div className="flex items-center gap-1.5"><div className="md:hidden"><BrandMark mark={brandMark} logoUrl={brandLogo} primary={brandPrimary} /></div><Button variant="ghost" size="icon-sm" className="hidden text-muted-foreground hover:bg-muted hover:text-foreground md:inline-flex md:size-6" onClick={toggleSidebar} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><SidebarSimpleIcon weight="bold" /></Button><Separator orientation="vertical" className="hidden h-5 md:block" /><p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">ISP billing / {current?.section}</p></div><div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="rounded-xl" aria-label="Open notifications" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(true)}><BellIcon /></Button><Separator orientation="vertical" className="h-5" /><button type="button" className="billing-profile-trigger flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/70" aria-expanded={profileOpen} aria-haspopup="dialog" onClick={() => setProfileOpen(current => !current)}><Avatar size="sm"><AvatarFallback>{session.user.name.slice(0, 1).toUpperCase()}</AvatarFallback></Avatar><span className="hidden text-xs font-medium sm:block">{session.user.name}</span></button></div></header><nav className="flex gap-1 overflow-x-auto bg-sidebar p-2 text-sidebar-foreground md:hidden" aria-label="Mobile navigation">{visibleNav.map(item => <Button key={item.key} variant="ghost" className={cn('shrink-0 gap-2 rounded-xl text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground', view === item.key && 'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground')} onClick={() => selectNavItem(item)} aria-current={view === item.key ? 'page' : undefined}><NavIcon name={item.key} />{item.label}</Button>)}</nav><div className="billing-content billing-canvas mx-auto flex w-full max-w-[1680px] flex-col gap-6 px-4 pb-4 pt-0 sm:px-6 sm:pb-6 sm:pt-0">{view === 'overview' ? <DashboardPage session={session} /> : view === 'subscribers' ? <SubscribersPage session={session} /> : view === 'Users' ? <UsersPage token={session.token} permissions={session.permissions} /> : view === 'Roles' ? <RolesPage token={session.token} permissions={session.permissions} /> : view === 'Branding' ? <BrandingPage token={session.token} permissions={session.permissions} branding={session.branding} onSaved={onBrandingSaved} /> : isModuleView(view) ? <NetworkModulePage module={view} section={current?.section} /> : <ResourceTablePage session={session} view={view} />}</div></main>
     {notificationsOpen && <NotificationDrawer onClose={() => setNotificationsOpen(false)} />}
     {profileOpen && <ProfileDrawer name={session.user.name} email={session.user.email} onClose={() => setProfileOpen(false)} onSignOut={signOut} />}
   </div>

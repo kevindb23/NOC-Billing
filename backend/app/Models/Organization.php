@@ -17,4 +17,5 @@ class Organization extends Model
     public function customers() { return $this->hasMany(Customer::class); }
     public function billingAccounts() { return $this->hasMany(BillingAccount::class); }
     public function plans() { return $this->hasMany(Plan::class); }
+    public function branding() { return $this->hasOne(OrganizationBranding::class); }
 }

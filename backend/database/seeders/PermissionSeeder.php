@@ -17,6 +17,8 @@ class PermissionSeeder extends Seeder
             'billing.export',
             'billing.update',
             'billing.view',
+            'branding.update',
+            'branding.view',
             'dashboard.create',
             'dashboard.delete',
             'dashboard.export',

@@ -4,13 +4,14 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Services\OrganizationPermissionService;
+use App\Services\OrganizationBrandingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
-    public function __construct(private OrganizationPermissionService $permissions) {}
+    public function __construct(private OrganizationPermissionService $permissions, private OrganizationBrandingService $branding) {}
 
     public function login(Request $request): JsonResponse
     {
@@ -30,6 +31,7 @@ class AuthController extends Controller
             'user' => $user,
             'organization' => $organization,
             'permissions' => $this->permissions->permissionsFor($user, $organization)->pluck('name')->sort()->values()->all(),
+            'branding' => $this->branding->resolved($organization),
         ]]);
     }
 
@@ -41,6 +43,7 @@ class AuthController extends Controller
             'user' => $request->user(),
             'organization' => $organization,
             'permissions' => $this->permissions->permissionsFor($request->user(), $organization)->pluck('name')->sort()->values()->all(),
+            'branding' => $this->branding->resolved($organization),
         ]]);
     }
 

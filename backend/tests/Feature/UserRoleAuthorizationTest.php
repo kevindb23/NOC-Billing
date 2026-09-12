@@ -32,6 +32,27 @@ class UserRoleAuthorizationTest extends TestCase
         $this->assertSame(['billing.invoices.view'], $service->permissionsFor($user, $organization)->pluck('name')->all());
     }
 
+    public function test_administrator_has_all_module_access_even_without_role_permission_rows(): void
+    {
+        $organization = Organization::factory()->create();
+        $user = User::factory()->create();
+        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Administrator']);
+
+        foreach (['users.view', 'roles.view', 'branding.view'] as $permissionName) {
+            Permission::query()->updateOrCreate(['name' => $permissionName], ['guard_name' => 'api']);
+        }
+
+        $organization->users()->attach($user, ['is_default' => true, 'status' => 'active']);
+        $role->users()->attach($user, ['organization_id' => $organization->id]);
+
+        $service = app(OrganizationPermissionService::class);
+
+        $this->assertTrue($service->isSuperAdmin($user, $organization));
+        $this->assertTrue($service->userCan($user, $organization, 'users.view'));
+        $this->assertTrue($service->userCan($user, $organization, 'roles.view'));
+        $this->assertTrue($service->userCan($user, $organization, 'branding.view'));
+    }
+
     public function test_user_cannot_use_a_role_assigned_in_another_organization(): void
     {
         $organization = Organization::factory()->create();

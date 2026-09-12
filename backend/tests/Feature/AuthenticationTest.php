@@ -38,6 +38,7 @@ class AuthenticationTest extends TestCase
 
         $response = $this->withHeader('X-Organization-Id', $organization->public_id)->getJson('/api/v1/auth/me');
 
-        $response->assertOk()->assertJsonPath('data.permissions.0', 'users.view');
+        $response->assertOk()->assertJsonPath('data.is_superadmin', true);
+        $this->assertContains('users.view', $response->json('data.permissions'));
     }
 }

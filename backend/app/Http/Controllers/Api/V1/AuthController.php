@@ -31,6 +31,7 @@ class AuthController extends Controller
             'user' => $user,
             'organization' => $organization,
             'permissions' => $this->permissions->permissionsFor($user, $organization)->pluck('name')->sort()->values()->all(),
+            'is_superadmin' => $this->permissions->isSuperAdmin($user, $organization),
             'branding' => $this->branding->resolved($organization),
         ]]);
     }
@@ -43,6 +44,7 @@ class AuthController extends Controller
             'user' => $request->user(),
             'organization' => $organization,
             'permissions' => $this->permissions->permissionsFor($request->user(), $organization)->pluck('name')->sort()->values()->all(),
+            'is_superadmin' => $this->permissions->isSuperAdmin($request->user(), $organization),
             'branding' => $this->branding->resolved($organization),
         ]]);
     }

@@ -53,7 +53,7 @@ import { networkModules, type NetworkModule } from './lib/networkModules'
 import { systemModules, type SystemModule } from './lib/systemModules'
 import type { BrandingValues } from './lib/branding'
 
-type Session = { token: string; user: { name: string; email: string }; permissions?: string[]; branding?: BrandingValues }
+type Session = { token: string; user: { name: string; email: string }; permissions?: string[]; is_superadmin?: boolean; branding?: BrandingValues }
 type AppView = View | NetworkModule | SystemModule
 type NavSection = 'Dashboard' | 'Billing' | 'Network' | 'System'
 type NavItem = { key: AppView; label: string; section: NavSection }
@@ -90,13 +90,8 @@ function isModuleView(view: AppView): view is NetworkModule | SystemModule {
 
 const navSections = ['Dashboard', 'Billing', 'Network', 'System'] as const
 
-function openOnlySection(section: NavSection): Record<NavSection, boolean> {
-  return {
-    Dashboard: section === 'Dashboard',
-    Billing: section === 'Billing',
-    Network: section === 'Network',
-    System: section === 'System',
-  }
+function openAllSections(): Record<NavSection, boolean> {
+  return { Dashboard: true, Billing: true, Network: true, System: true }
 }
 
 function App() {
@@ -123,13 +118,13 @@ function App() {
   useEffect(() => { localStorage.setItem('isp-view', view) }, [view])
   useEffect(() => {
     if (!session?.token) return
-    void apiRequest<{ data: { permissions: string[] } }>('/auth/me', {}, session.token).then(response => setSession(current => current ? { ...current, permissions: response.data.permissions } : current)).catch(() => undefined)
+    void apiRequest<{ data: { permissions: string[]; is_superadmin?: boolean; branding?: BrandingValues } }>('/auth/me', {}, session.token).then(response => setSession(current => current ? { ...current, permissions: response.data.permissions, is_superadmin: response.data.is_superadmin, branding: response.data.branding || current.branding } : current)).catch(() => undefined)
   }, [session?.token])
   useEffect(() => {
-    if (view === 'Users' && !hasPermission(session?.permissions, 'users.view')) setView('overview')
-    if (view === 'Roles' && !hasPermission(session?.permissions, 'roles.view')) setView('overview')
-    if (view === 'Branding' && !hasPermission(session?.permissions, 'branding.view')) setView('overview')
-  }, [session?.permissions, view])
+    if (session?.is_superadmin === false && view === 'Users' && !hasPermission(session?.permissions, 'users.view')) setView('overview')
+    if (session?.is_superadmin === false && view === 'Roles' && !hasPermission(session?.permissions, 'roles.view')) setView('overview')
+    if (session?.is_superadmin === false && view === 'Branding' && !hasPermission(session?.permissions, 'branding.view')) setView('overview')
+  }, [session?.is_superadmin, session?.permissions, view])
   const signIn = (next: Session) => { localStorage.setItem('isp-session', JSON.stringify(next)); setSession(next); setError('') }
   const signOut = async () => { if (session) await apiRequest('/auth/logout', { method: 'POST' }, session.token).catch(() => undefined); localStorage.removeItem('isp-session'); setSession(null) }
 
@@ -210,12 +205,12 @@ function NetworkIllustration() {
 function Shell({ session, view, setView, signOut, theme, setTheme, onBrandingSaved }: { session: Session; view: AppView; setView: (v: AppView) => void; signOut: () => void; theme: 'light' | 'dark'; setTheme: (theme: 'light' | 'dark') => void; onBrandingSaved: (branding: BrandingValues) => void }) {
   const current = nav.find(item => item.key === view)
   const visibleNav = nav.filter(item => {
+    if (session.is_superadmin !== false) return true
     if (item.key === 'Users') return hasPermission(session.permissions, 'users.view')
     if (item.key === 'Roles') return hasPermission(session.permissions, 'roles.view')
     if (item.key === 'Branding') return hasPermission(session.permissions, 'branding.view')
     return true
   })
-  const activeSection = current?.section ?? 'Dashboard'
   const brandName = session.branding?.short_name || session.branding?.organization_name || BRAND_NAME
   const brandMark = session.branding?.brand_mark || BRAND_MARK
   const brandLogo = session.branding?.logo_url
@@ -228,22 +223,22 @@ function Shell({ session, view, setView, signOut, theme, setTheme, onBrandingSav
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as Partial<Record<NavSection, boolean>>
-        const storedOpenSection = navSections.find(section => parsed[section])
-        return openOnlySection(storedOpenSection ?? activeSection)
+        if (navSections.every(section => typeof parsed[section] === 'boolean')) return parsed as Record<NavSection, boolean>
+        return openAllSections()
       } catch {
-        return openOnlySection(activeSection)
+        return openAllSections()
       }
     }
-    return openOnlySection(activeSection)
+    return openAllSections()
   })
   const toggleSection = (section: NavSection) => setExpandedSections(current => {
-    const next = current[section] ? { Dashboard: true, Billing: false, Network: false, System: false } : openOnlySection(section)
+    const next = { ...current, [section]: !current[section] }
     localStorage.setItem('isp-expanded-sections', JSON.stringify(next))
     return next
   })
   const selectNavItem = (item: NavItem) => {
     setView(item.key)
-    const next = openOnlySection(item.section)
+    const next = { ...expandedSections, [item.section]: true }
     setExpandedSections(next)
     localStorage.setItem('isp-expanded-sections', JSON.stringify(next))
   }

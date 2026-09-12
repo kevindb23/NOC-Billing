@@ -44,8 +44,20 @@ describe('billing application entry point', () => {
     expect(screen.getAllByRole('button', { name: 'Roles' }).every(button => button.getAttribute('aria-current') === 'page')).toBe(true)
   })
 
+  it('keeps every module available to the superadmin across all navigation sections', () => {
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Admin', email: 'admin@example.com' }, permissions: [], is_superadmin: true }))
+    localStorage.setItem('isp-expanded-sections', JSON.stringify({ System: true }))
+    render(<App />)
+
+    expect(screen.getAllByRole('button', { name: 'Overview' })).not.toHaveLength(0)
+    expect(screen.getAllByRole('button', { name: 'Billing accounts' })).not.toHaveLength(0)
+    expect(screen.getAllByRole('button', { name: 'BNG' })).not.toHaveLength(0)
+    expect(screen.getAllByRole('button', { name: 'Users' })).not.toHaveLength(0)
+    expect(screen.getAllByRole('button', { name: 'Branding' })).not.toHaveLength(0)
+  })
+
   it('redirects an unauthorized stored administration view and hides its navigation', () => {
-    localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Viewer', email: 'viewer@example.com' }, permissions: [] }))
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Viewer', email: 'viewer@example.com' }, permissions: [], is_superadmin: false }))
     localStorage.setItem('isp-view', 'Roles')
     localStorage.setItem('isp-expanded-sections', JSON.stringify({ System: true }))
     render(<App />)

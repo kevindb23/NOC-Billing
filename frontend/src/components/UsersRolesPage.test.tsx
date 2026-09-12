@@ -150,7 +150,7 @@ describe('users and roles administration', () => {
   })
 
   it('hides administration navigation and actions without permissions', async () => {
-    localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Viewer', email: 'viewer@example.com' }, permissions: [] }))
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Viewer', email: 'viewer@example.com' }, permissions: [], is_superadmin: false }))
     const app = render(<App />)
     expect(screen.queryByRole('button', { name: 'Users' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Roles' })).toBeNull()

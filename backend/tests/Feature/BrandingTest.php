@@ -83,8 +83,8 @@ class BrandingTest extends TestCase
         $organization = Organization::factory()->create();
         $user = User::factory()->create();
         $role = Role::create(['organization_id' => $organization->id, 'name' => 'Brand manager']);
-        $permissions = Permission::insertGetId(['name' => 'branding.view', 'guard_name' => 'api', 'created_at' => now(), 'updated_at' => now()]);
-        $updatePermission = Permission::create(['name' => 'branding.update']);
+        $permissions = Permission::query()->updateOrCreate(['name' => 'branding.view'], ['guard_name' => 'api'])->id;
+        $updatePermission = Permission::query()->updateOrCreate(['name' => 'branding.update'], ['guard_name' => 'api']);
         $organization->users()->attach($user, ['is_default' => true, 'status' => 'active']);
         $role->permissions()->attach([$permissions, $updatePermission->id]);
         $role->users()->attach($user, ['organization_id' => $organization->id]);

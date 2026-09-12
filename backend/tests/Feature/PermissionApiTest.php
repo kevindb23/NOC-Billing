@@ -74,11 +74,12 @@ class PermissionApiTest extends TestCase
 
         $response->assertOk();
         $catalog = collect($response->json('data'));
-        $this->assertSame(['Dashboard', 'Billing', 'Network', 'Users', 'Roles', 'Branding', 'Audit Logs'], $catalog->pluck('group')->all());
+        $this->assertSame(['Dashboard', 'Billing', 'Network', 'System', 'Users', 'Roles', 'Branding', 'Audit Logs'], $catalog->pluck('group')->all());
         $this->assertSame(['view', 'create', 'update', 'delete', 'export'], collect($catalog->get(0)['permissions'])->pluck('action')->all());
         $this->assertSame(['view', 'create', 'update', 'delete', 'export'], collect($catalog->get(3)['permissions'])->pluck('action')->all());
-        $this->assertSame(['view', 'update'], collect($catalog->get(5)['permissions'])->pluck('action')->all());
-        $this->assertSame(['view', 'export'], collect($catalog->get(6)['permissions'])->pluck('action')->all());
+        $this->assertSame(['view', 'create', 'update', 'delete', 'export'], collect($catalog->get(4)['permissions'])->pluck('action')->all());
+        $this->assertSame(['view', 'update'], collect($catalog->get(6)['permissions'])->pluck('action')->all());
+        $this->assertSame(['view', 'export'], collect($catalog->get(7)['permissions'])->pluck('action')->all());
         foreach ($catalog->pluck('permissions')->flatten(1) as $permission) {
             $this->assertArrayHasKey('id', $permission);
             $this->assertSame(Permission::where('name', $permission['name'])->value('id'), $permission['id']);

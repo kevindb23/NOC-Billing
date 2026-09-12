@@ -14,6 +14,7 @@ class PermissionController extends Controller
             'Dashboard' => ['dashboard'],
             'Billing' => ['billing'],
             'Network' => ['network'],
+            'System' => ['system'],
             'Users' => ['users'],
             'Roles' => ['roles'],
             'Branding' => ['branding'],

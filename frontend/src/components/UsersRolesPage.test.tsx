@@ -35,6 +35,23 @@ describe('users and roles administration', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) }))
   })
 
+  it('expands legacy System permissions into every module row', () => {
+    render(<PermissionMatrix groups={[{ group: 'System', permissions: [
+      { id: 1, name: 'users.view', action: 'view' },
+      { id: 2, name: 'roles.update', action: 'update' },
+      { id: 3, name: 'branding.view', action: 'view' },
+      { id: 4, name: 'audit-logs.export', action: 'export' },
+    ] }]} selectedIds={[]} onChange={vi.fn()} />)
+
+    for (const group of ['Dashboard', 'Billing', 'Network', 'System', 'Users', 'Roles', 'Branding', 'Audit Logs']) {
+      expect(screen.getByText(group)).toBeTruthy()
+    }
+    expect(screen.getByLabelText('users.view')).toBeTruthy()
+    expect(screen.getByLabelText('roles.update')).toBeTruthy()
+    expect(screen.getByLabelText('branding.view')).toBeTruthy()
+    expect(screen.getByLabelText('audit-logs.export')).toBeTruthy()
+  })
+
   it('selects the users API path with pagination', async () => {
     await actualUsersRoles.listUsers('token', 2)
     expect(fetch).toHaveBeenCalledWith('/api/v1/users?per_page=20&page=2', expect.anything())

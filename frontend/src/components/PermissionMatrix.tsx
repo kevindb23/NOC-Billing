@@ -2,9 +2,33 @@ import { useMemo } from 'react'
 import type { PermissionGroup } from '@/lib/usersRoles'
 
 const actions = ['view', 'create', 'update', 'delete', 'export'] as const
+const modules = [
+  ['Dashboard', 'dashboard'],
+  ['Billing', 'billing'],
+  ['Network', 'network'],
+  ['System', 'system'],
+  ['Users', 'users'],
+  ['Roles', 'roles'],
+  ['Branding', 'branding'],
+  ['Audit Logs', 'audit-logs'],
+] as const
+
+function normalizeGroups(groups: PermissionGroup[]): PermissionGroup[] {
+  const legacySystem = groups.find(group => group.group === 'System')
+  const explicitGroups = new Map(groups.filter(group => group.group !== 'System').map(group => [group.group, group.permissions]))
+
+  return modules.map(([group, prefix]) => {
+    const permissions = [
+      ...(explicitGroups.get(group) || []),
+      ...(legacySystem?.permissions.filter(permission => permission.name.startsWith(`${prefix}.`)) || []),
+    ]
+    return { group, permissions: [...new Map(permissions.map(permission => [permission.id, permission])).values()] }
+  })
+}
 
 export function PermissionMatrix({ groups, selectedIds, onChange }: { groups: PermissionGroup[]; selectedIds: number[]; onChange: (ids: number[]) => void }) {
   const selected = useMemo(() => new Set(selectedIds), [selectedIds])
+  const normalizedGroups = useMemo(() => normalizeGroups(groups), [groups])
   const toggle = (id: number) => onChange(selected.has(id) ? selectedIds.filter(selectedId => selectedId !== id) : [...selectedIds, id])
   const toggleGroup = (ids: number[]) => {
     const allSelected = ids.every(id => selected.has(id))
@@ -15,7 +39,7 @@ export function PermissionMatrix({ groups, selectedIds, onChange }: { groups: Pe
     <table className="min-w-[720px] w-full table-fixed text-xs">
       <colgroup><col className="w-[40%]" />{actions.map(action => <col className="w-[12%]" key={action} />)}</colgroup>
       <thead><tr className="border-b bg-muted/35"><th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Permission group</th>{actions.map(action => <th className="px-2 py-2.5 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground" key={action}>{action}</th>)}</tr></thead>
-      <tbody>{groups.map(group => {
+      <tbody>{normalizedGroups.map(group => {
         const ids = group.permissions.map(permission => permission.id)
         const permissionsByAction = new Map(group.permissions.map(permission => [permission.action, permission]))
         return <tr className="border-b last:border-0" key={group.group}>

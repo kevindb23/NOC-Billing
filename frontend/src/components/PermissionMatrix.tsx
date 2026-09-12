@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import type { PermissionGroup } from '@/lib/usersRoles'
 
+const actions = ['view', 'create', 'update', 'delete', 'export'] as const
+
 export function PermissionMatrix({ groups, selectedIds, onChange }: { groups: PermissionGroup[]; selectedIds: number[]; onChange: (ids: number[]) => void }) {
   const selected = useMemo(() => new Set(selectedIds), [selectedIds])
   const toggle = (id: number) => onChange(selected.has(id) ? selectedIds.filter(selectedId => selectedId !== id) : [...selectedIds, id])
@@ -9,14 +11,16 @@ export function PermissionMatrix({ groups, selectedIds, onChange }: { groups: Pe
     onChange(allSelected ? selectedIds.filter(id => !ids.includes(id)) : [...new Set([...selectedIds, ...ids])])
   }
 
-  return <div className="overflow-x-auto rounded-sm border border-border/70">
-    <table className="min-w-[620px] w-full text-xs">
-      <thead><tr className="border-b bg-muted/35"><th className="px-3 py-2 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Permission group</th><th className="px-3 py-2 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Actions</th></tr></thead>
+  return <div className="overflow-x-auto rounded-lg border border-border/70 bg-card">
+    <table className="min-w-[720px] w-full table-fixed text-xs">
+      <colgroup><col className="w-[40%]" />{actions.map(action => <col className="w-[12%]" key={action} />)}</colgroup>
+      <thead><tr className="border-b bg-muted/35"><th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Permission group</th>{actions.map(action => <th className="px-2 py-2.5 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground" key={action}>{action}</th>)}</tr></thead>
       <tbody>{groups.map(group => {
         const ids = group.permissions.map(permission => permission.id)
+        const permissionsByAction = new Map(group.permissions.map(permission => [permission.action, permission]))
         return <tr className="border-b last:border-0" key={group.group}>
-          <td className="w-40 px-3 py-3 align-top font-medium"><label className="flex items-center gap-2"><input type="checkbox" aria-label={`Select all ${group.group} permissions`} checked={ids.length > 0 && ids.every(id => selected.has(id))} onChange={() => toggleGroup(ids)} />{group.group}</label></td>
-          <td className="px-3 py-3"><div className="flex flex-wrap gap-x-5 gap-y-2">{group.permissions.map(permission => <label className="flex items-center gap-2 text-muted-foreground" key={permission.id}><input type="checkbox" aria-label={permission.name} checked={selected.has(permission.id)} onChange={() => toggle(permission.id)} />{permission.action}</label>)}</div></td>
+          <td className="px-3 py-3 font-medium"><label className="flex items-center gap-2"><input type="checkbox" aria-label={`Select all ${group.group} permissions`} checked={ids.length > 0 && ids.every(id => selected.has(id))} onChange={() => toggleGroup(ids)} />{group.group}</label></td>
+          {actions.map(action => { const permission = permissionsByAction.get(action); return <td className="px-2 py-3 text-center" key={action}>{permission ? <label className="inline-flex items-center justify-center"><input type="checkbox" aria-label={permission.name} checked={selected.has(permission.id)} onChange={() => toggle(permission.id)} /></label> : <span className="text-muted-foreground/35" aria-hidden="true">—</span>}</td> })}
         </tr>
       })}</tbody>
     </table>

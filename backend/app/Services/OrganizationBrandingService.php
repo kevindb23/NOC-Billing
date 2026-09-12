@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Organization;
+use Illuminate\Support\Facades\Schema;
 
 class OrganizationBrandingService
 {
@@ -17,6 +18,10 @@ class OrganizationBrandingService
             'primary_color' => null,
             'accent_color' => null,
         ];
+
+        if (! Schema::hasTable('organization_brandings')) {
+            return $defaults;
+        }
 
         return array_merge($defaults, $organization->branding?->only(array_keys($defaults)) ?? []);
     }

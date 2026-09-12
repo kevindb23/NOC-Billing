@@ -8,6 +8,8 @@ use App\Models\Role;
 use App\Models\User;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -76,6 +78,18 @@ class BrandingTest extends TestCase
             ->putJson('/api/v1/branding', ['logo_url' => 'javascript:alert(1)', 'primary_color' => 'green'])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['logo_url', 'primary_color']);
+    }
+
+    public function test_login_uses_default_branding_when_branding_table_is_not_available(): void
+    {
+        $organization = Organization::factory()->create();
+        $user = User::factory()->create(['password' => Hash::make('password')]);
+        $organization->users()->attach($user, ['is_default' => true, 'status' => 'active']);
+        Schema::drop('organization_brandings');
+
+        $response = $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password']);
+
+        $response->assertOk()->assertJsonPath('data.branding.organization_name', $organization->name);
     }
 
     private function authorizedContext(): array

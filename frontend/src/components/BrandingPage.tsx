@@ -21,13 +21,13 @@ const emptyBranding: BrandingValues = {
   accent_color: null,
 }
 
-export function BrandingPage({ token, permissions, branding, onSaved }: { token?: string; permissions?: string[]; branding?: BrandingValues; onSaved: (branding: BrandingValues) => void }) {
+export function BrandingPage({ token, permissions, isSuperadmin = false, branding, onSaved }: { token?: string; permissions?: string[]; isSuperadmin?: boolean; branding?: BrandingValues; onSaved: (branding: BrandingValues) => void }) {
   const [values, setValues] = useState<BrandingValues>(branding || emptyBranding)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
-  const canView = hasPermission(permissions, 'branding.view')
-  const canUpdate = hasPermission(permissions, 'branding.update')
+  const canView = isSuperadmin || hasPermission(permissions, 'branding.view')
+  const canUpdate = isSuperadmin || hasPermission(permissions, 'branding.update')
 
   useEffect(() => { if (branding) setValues(branding) }, [branding])
 

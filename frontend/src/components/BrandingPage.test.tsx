@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BrandingPage } from './BrandingPage'
 import { updateBranding, type BrandingValues } from '@/lib/branding'
 
@@ -20,6 +20,15 @@ const values: BrandingValues = {
 }
 
 describe('branding page', () => {
+  beforeEach(() => cleanup())
+
+  it('allows a superadmin to access branding without explicit permission rows', () => {
+    render(<BrandingPage token="token" permissions={[]} isSuperadmin branding={values} onSaved={vi.fn()} />)
+
+    expect(screen.getByRole('heading', { name: 'Branding' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeTruthy()
+  })
+
   it('renders the saved identity and updates the live preview', () => {
     render(<BrandingPage token="token" permissions={['branding.view']} branding={values} onSaved={vi.fn()} />)
 

@@ -62,6 +62,17 @@ describe('billing application entry point', () => {
     expect(screen.getAllByRole('button', { name: 'Branding' })).not.toHaveLength(0)
   })
 
+  it('lets a superadmin open branding without explicit permission rows', async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ data: { permissions: [], is_superadmin: true } })
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Admin', email: 'admin@example.com' }, permissions: [], is_superadmin: true }))
+    localStorage.setItem('isp-expanded-sections', JSON.stringify({ Dashboard: true, Billing: true, Network: true, System: true }))
+    render(<App />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Branding' })[0])
+    expect(await screen.findByRole('heading', { name: 'Branding' })).toBeTruthy()
+    expect(screen.queryByText('Access denied')).toBeNull()
+  })
+
   it('redirects an unauthorized stored administration view and hides its navigation', () => {
     localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Viewer', email: 'viewer@example.com' }, permissions: [], is_superadmin: false }))
     localStorage.setItem('isp-view', 'Roles')

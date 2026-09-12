@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Toaster } from 'sonner'
 import {
   BellIcon,
   BellRingingIcon,
@@ -49,6 +50,7 @@ import { ResourceTablePage } from './components/ResourceTablePage'
 import { SubscribersPage } from './components/SubscribersPage'
 import { RolesPage } from './components/RolesPage'
 import { UsersPage } from './components/UsersPage'
+import { ConfirmProvider } from './components/ConfirmProvider'
 import { networkModules, type NetworkModule } from './lib/networkModules'
 import { systemModules, type SystemModule } from './lib/systemModules'
 import type { BrandingValues } from './lib/branding'
@@ -128,8 +130,10 @@ function App() {
   const signIn = (next: Session) => { localStorage.setItem('isp-session', JSON.stringify(next)); setSession(next); setError('') }
   const signOut = async () => { if (session) await apiRequest('/auth/logout', { method: 'POST' }, session.token).catch(() => undefined); localStorage.removeItem('isp-session'); setSession(null) }
 
-  if (!session) return <Login onSignedIn={signIn} error={error} setError={setError} />
-  return <Shell session={session} view={view} setView={setView} signOut={signOut} theme={theme} setTheme={setTheme} onBrandingSaved={branding => setSession(current => current ? { ...current, branding } : current)} />
+  return <ConfirmProvider>
+    <Toaster position="top-right" theme={theme} closeButton richColors={false} />
+    {!session ? <Login onSignedIn={signIn} error={error} setError={setError} /> : <Shell session={session} view={view} setView={setView} signOut={signOut} theme={theme} setTheme={setTheme} onBrandingSaved={branding => setSession(current => current ? { ...current, branding } : current)} />}
+  </ConfirmProvider>
 }
 
 function Login({ onSignedIn, error, setError }: { onSignedIn: (s: Session) => void; error: string; setError: (s: string) => void }) {

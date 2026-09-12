@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { apiRequest } from './lib/api'
@@ -27,6 +27,12 @@ describe('billing application entry point', () => {
     const signInButton = screen.getByRole('button', { name: /sign in with email/i })
     expect(signInButton).toBeTruthy()
     expect(signInButton.getAttribute('type')).toBe('submit')
+  })
+
+  it('mounts one global Sonner toaster', async () => {
+    render(<App />)
+
+    await waitFor(() => expect(screen.getByLabelText(/Notifications alt\+T/)).toBeTruthy())
   })
 
   it('routes between Users and Roles from the existing System navigation', () => {

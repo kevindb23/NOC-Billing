@@ -18,7 +18,8 @@
     "class-variance-authority": "^0.7.1",
     "cn": "^0.2.6",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "sonner": "^2.0.8"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",

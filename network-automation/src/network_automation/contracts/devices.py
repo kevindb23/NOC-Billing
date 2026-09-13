@@ -19,8 +19,10 @@ class DeviceTarget(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
+    router_id: str | None = Field(default=None, min_length=1, max_length=100)
     driver: str = Field(min_length=1, max_length=100)
     transport: TransportName
+    credential_version: int = Field(default=0, ge=0)
     hostname: str | None = Field(default=None, min_length=1, max_length=255)
     management_ip: IPvAnyAddress | None = None
     port: int | None = Field(default=None, ge=1, le=65535)

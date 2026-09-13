@@ -18,6 +18,14 @@ test = [
     "httpx>=0.27,<1.0",
     "pytest>=8.0,<9.0",
 ]
+device = [
+    "httpx>=0.27,<1.0",
+    "junos-eznc>=2.7,<3.0",
+    "ncclient>=0.6.15,<1.0",
+    "netmiko>=4.4,<5.0",
+    "paramiko>=3.4,<4.0",
+    "pysnmp>=7.1,<8.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

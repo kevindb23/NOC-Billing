@@ -10,7 +10,21 @@ from .devices import DeviceCredentials, DeviceTarget
 from network_automation.security.redaction import reject_sensitive_keys
 
 
-OperationName = Literal["test_connection", "get_system_info"]
+OperationName = Literal[
+    "test_connection",
+    "get_system_info",
+    "get_device_facts",
+    "get_interfaces",
+    "get_interface_status",
+    "get_routes",
+    "get_bgp_neighbors",
+    "get_traffic_counters",
+    "validate_configuration",
+    "preview_configuration",
+    "apply_configuration",
+    "commit_configuration",
+    "rollback_configuration",
+]
 CorrelationId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 
 

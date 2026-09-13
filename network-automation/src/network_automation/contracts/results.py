@@ -11,7 +11,7 @@ from .operations import CorrelationId, OperationName
 from network_automation.security.redaction import redact, redact_exception_message
 
 
-NormalizedStatus = Literal["connected", "not_configured", "unsupported", "failed"]
+NormalizedStatus = Literal["succeeded", "connected", "not_configured", "unsupported", "failed"]
 DriverName = Annotated[str, Field(min_length=1, max_length=100)]
 
 

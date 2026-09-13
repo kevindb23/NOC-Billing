@@ -32,13 +32,9 @@ Commit: `feat: add persistent router transports`
 
 - `python -m compileall -q network-automation/src network-automation/tests` —
   passed.
-- Non-NETCONF focused tests — `14 passed`.
-- Isolated NETCONF transport test — `1 passed`.
+- Focused transport/session tests — `20 passed`.
 
 ## Concern
 
-- The environment's pytest/asyncio setup hangs when injected synchronous
-  Netmiko/ncclient mock methods are run through `asyncio.to_thread`. Injected
-  test factories now use a direct async-compatible path; real library imports
-  retain the threaded path. No live device or installed optional device
-  library was available for protocol-level verification.
+- No live device or installed optional device library was available for
+  protocol-level verification; all transport tests use injected fakes/mocks.

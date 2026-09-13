@@ -33,7 +33,26 @@ class RouterCredentialRequest extends FormRequest
                 'tls_client_key' => ['sometimes', 'nullable', 'string', 'max:100000'],
             ],
             'api' => $common + [
-                'api_base_url' => ['sometimes', 'nullable', 'url', 'max:2048'],
+                'api_base_url' => [
+                    'sometimes',
+                    'nullable',
+                    'url',
+                    'max:2048',
+                    static function (string $attribute, mixed $value, \Closure $fail): void {
+                        if (! is_string($value)) {
+                            return;
+                        }
+
+                        $parts = parse_url($value);
+                        if ($parts === false
+                            || array_key_exists('user', $parts)
+                            || array_key_exists('pass', $parts)
+                            || array_key_exists('query', $parts)
+                            || array_key_exists('fragment', $parts)) {
+                            $fail('The API base URL must not contain credentials, query strings, or fragments.');
+                        }
+                    },
+                ],
                 'auth_mode' => ['sometimes', 'nullable', 'string', Rule::in(['token'])],
                 'api_token' => ['required', 'string', 'min:1', 'max:10000'],
             ],

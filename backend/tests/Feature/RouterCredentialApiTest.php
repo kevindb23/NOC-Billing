@@ -62,6 +62,71 @@ class RouterCredentialApiTest extends TestCase
             ->assertJsonValidationErrors(['credential_profile.api_token']);
     }
 
+    public function test_api_base_url_rejects_userinfo_credentials_before_storage(): void
+    {
+        $this->authenticateRouterManager();
+
+        $response = $this->postJson('/api/v1/routers', $this->routerPayload([
+            'credential_profile' => [
+                'name' => 'primary',
+                'api_base_url' => 'https://user:url-password@example.test',
+                'api_token' => 'api-token-secret',
+            ],
+        ]));
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['credential_profile.api_base_url']);
+        $this->assertDatabaseCount('routers', 0);
+        $this->assertDatabaseCount('router_credentials', 0);
+        $this->assertDatabaseCount('audit_logs', 0);
+        $this->assertStringNotContainsString('url-password', $response->getContent());
+        $this->assertStringNotContainsString('api-token-secret', $response->getContent());
+    }
+
+    public function test_api_base_url_rejects_query_strings_before_storage(): void
+    {
+        $this->authenticateRouterManager();
+
+        $response = $this->postJson('/api/v1/routers', $this->routerPayload([
+            'credential_profile' => [
+                'name' => 'primary',
+                'api_base_url' => 'https://example.test/api?token=query-token-secret',
+                'api_token' => 'api-token-secret',
+            ],
+        ]));
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['credential_profile.api_base_url']);
+        $this->assertDatabaseCount('routers', 0);
+        $this->assertDatabaseCount('router_credentials', 0);
+        $this->assertDatabaseCount('audit_logs', 0);
+        $this->assertStringNotContainsString('query-token-secret', $response->getContent());
+        $this->assertStringNotContainsString('api-token-secret', $response->getContent());
+    }
+
+    public function test_api_base_url_accepts_a_safe_url_without_exposing_api_token(): void
+    {
+        $this->authenticateRouterManager();
+
+        $response = $this->postJson('/api/v1/routers', $this->routerPayload([
+            'credential_profile' => [
+                'name' => 'primary',
+                'api_base_url' => 'https://example.test/api',
+                'api_token' => 'api-token-secret',
+            ],
+        ]));
+
+        $response->assertCreated()
+            ->assertJsonPath('data.credential_profile.connection_metadata.api_base_url', 'https://example.test/api')
+            ->assertJsonMissingPath('data.credential_profile.api_token');
+        $this->assertStringNotContainsString('api-token-secret', $response->getContent());
+        $this->assertDatabaseCount('routers', 1);
+        $this->assertDatabaseCount('router_credentials', 1);
+
+        $audit = AuditLog::query()->where('action', 'router.created')->firstOrFail();
+        $this->assertStringNotContainsString('api-token-secret', json_encode($audit->toArray(), JSON_THROW_ON_ERROR));
+    }
+
     public function test_snmp_requires_a_non_empty_community_when_profile_is_supplied(): void
     {
         $this->authenticateRouterManager();
@@ -345,20 +410,17 @@ class RouterCredentialApiTest extends TestCase
         $this->assertStringNotContainsString('netadmin', $encoded);
     }
 
-    public function test_transport_default_migration_reverses_mock_conversion_on_rollback(): void
+    public function test_transport_default_migration_rollback_preserves_existing_api_rows(): void
     {
         $this->authenticateRouterManager();
         $router = Router::create($this->routerPayload([
-            'name' => 'Legacy migration router',
-            'preferred_transport' => 'mock',
+            'name' => 'API migration router',
+            'preferred_transport' => 'api',
         ]));
         $migration = require database_path('migrations/2026_09_13_000024_change_router_transport_default.php');
 
-        $migration->up();
-        $this->assertSame('api', $router->fresh()->preferred_transport);
-
         $migration->down();
-        $this->assertSame('mock', $router->fresh()->preferred_transport);
+        $this->assertSame('api', $router->fresh()->preferred_transport);
     }
 
     private function authenticateRouterManager(): User

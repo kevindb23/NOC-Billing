@@ -89,3 +89,15 @@ focused Task 3 and Router CRUD suite is the reliable verification gate here.
 - Added regression coverage for GET resources, eager loading, metadata
   allowlisting, transport replacement, old audit snapshots, and migration
   rollback.
+
+## Remaining review fixes
+
+- Made migration rollback schema-only: `down()` changes the
+  `preferred_transport` default back to `mock` without rewriting existing
+  rows, so existing `api` rows remain `api`.
+- Added a regression test that verifies an existing API row survives rollback.
+- Hardened API base URL validation to reject userinfo credentials, query
+  strings, and fragments before router or credential persistence.
+- Added focused tests for a userinfo URL, a query-token URL, and a safe API
+  URL. The tests also verify rejected values are not persisted and API tokens
+  remain absent from responses and audit snapshots.

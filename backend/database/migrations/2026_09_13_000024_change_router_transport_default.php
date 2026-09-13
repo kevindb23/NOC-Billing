@@ -33,25 +33,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        $defaultChanged = false;
-
-        try {
-            Schema::table('routers', function (Blueprint $table): void {
-                $table->string('preferred_transport')->default('mock')->change();
-            });
-            $defaultChanged = true;
-
-            DB::transaction(function (): void {
-                DB::table('routers')->where('preferred_transport', 'api')->update(['preferred_transport' => 'mock']);
-            });
-        } catch (\Throwable $exception) {
-            if ($defaultChanged) {
-                Schema::table('routers', function (Blueprint $table): void {
-                    $table->string('preferred_transport')->default('api')->change();
-                });
-            }
-
-            throw $exception;
-        }
+        Schema::table('routers', function (Blueprint $table): void {
+            $table->string('preferred_transport')->default('mock')->change();
+        });
     }
 };

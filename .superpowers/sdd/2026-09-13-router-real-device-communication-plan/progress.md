@@ -49,6 +49,6 @@
 - Task 5: complete (commit 8da9690; 48 focused driver tests and compileall passed; no dependencies installed)
 - Task 6: complete (commit c42ef6b plus operation-dispatch hardening; 12 focused tests and 39 assertions passed)
 - Task 7: complete (commit 6a7a084; 16 focused tests and 59 assertions passed; touched PHP lint clean; permission migration uses 000026 because 000024 was already occupied)
-- Task 8: pending
-- Task 9: pending
+- Task 8: complete (commit 7062df5; focused test/lint/build commands blocked because frontend dependencies are not installed; git diff --check passed)
+- Task 9: complete (configuration/docs added; 11 focused tests and compileall passed; no dependency installation or live device calls)
 - Task 10: pending

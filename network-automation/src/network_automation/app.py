@@ -1,8 +1,11 @@
 """FastAPI application factory for the automation gateway."""
 
+import hmac
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
 from .config import GatewaySettings, get_settings
 
 
@@ -31,6 +34,28 @@ def create_app(
     app.state.settings = resolved_settings
     app.state.driver_registry = driver_registry
     app.state.transport_registry = transport_registry
+
+    @app.middleware("http")
+    async def require_internal_service_auth(request: Request, call_next: Any) -> Any:
+        # Health is intentionally unauthenticated so Docker/orchestrators can
+        # probe the process without receiving a service credential.
+        if request.url.path == "/health":
+            return await call_next(request)
+
+        try:
+            expected = resolved_settings.require_service_auth()
+        except Exception:
+            return JSONResponse(
+                {"detail": "Internal service authentication is not configured."},
+                status_code=503,
+            )
+
+        authorization = request.headers.get("authorization", "")
+        scheme, _, presented = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not presented or not hmac.compare_digest(presented, expected):
+            return JSONResponse({"detail": "Invalid internal service authentication."}, status_code=401)
+
+        return await call_next(request)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

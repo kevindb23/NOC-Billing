@@ -81,6 +81,68 @@ class RouterOperationPersistenceTest extends TestCase
         $this->assertStringContainsString('[REDACTED]', $serialized);
     }
 
+    public function test_operation_snapshot_redaction_covers_all_credential_material_and_quoted_values(): void
+    {
+        $router = Router::create([
+            'name' => 'Comprehensive operation redaction router',
+            'driver' => 'mikrotik_router',
+        ]);
+
+        $secrets = [
+            'snapshot-username-value',
+            'snapshot-user-value',
+            'snapshot-login-value',
+            'snapshot-password-value',
+            'snapshot-token-value',
+            'snapshot-community-value',
+            'snapshot-private-key-value',
+            'quoted username value',
+            'quoted password value',
+            'quoted token value',
+            'quoted community value',
+            'quoted private key value',
+        ];
+
+        $operation = RouterOperation::create([
+            'router_id' => $router->id,
+            'operation' => 'get_system_info',
+            'driver' => 'mikrotik_router',
+            'transport' => 'api',
+            'parameters' => [
+                'credential_profile_id' => '01J00000000000000000000000',
+                'username' => 'snapshot-username-value',
+                'user' => 'snapshot-user-value',
+                'login' => 'snapshot-login-value',
+                'password' => 'snapshot-password-value',
+                'token' => 'snapshot-token-value',
+                'community' => 'snapshot-community-value',
+                'private-key' => 'snapshot-private-key-value',
+                'nested' => [
+                    'apiKey' => 'snapshot-token-value',
+                    'message' => 'username="quoted username value" password="quoted password value"',
+                ],
+            ],
+            'status' => 'failed',
+            'result' => [
+                'details' => 'token: "quoted token value" community: "quoted community value"',
+                'credentials' => ['private key' => 'quoted private key value'],
+            ],
+            'error_code' => 'connection_failed',
+            'error_message' => 'login: quoted login value username="quoted username value" password=multi word password value token="quoted token value" community: multi word community value private-key="quoted private key value" correlation_id=router-operation-correlation-redaction',
+            'correlation_id' => 'router-operation-correlation-redaction',
+        ]);
+
+        $serialized = $operation->fresh()->toJson();
+
+        foreach ($secrets as $secret) {
+            $this->assertStringNotContainsString($secret, $serialized);
+        }
+
+        $this->assertStringContainsString('credential_profile_id', $serialized);
+        $this->assertStringContainsString('01J00000000000000000000000', $serialized);
+        $this->assertStringContainsString('router-operation-correlation-redaction', $serialized);
+    }
+
     public function test_router_deletion_is_restricted_when_operation_history_exists(): void
     {
         $router = Router::create([

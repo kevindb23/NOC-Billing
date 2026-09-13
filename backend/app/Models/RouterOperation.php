@@ -108,27 +108,125 @@ class RouterOperation extends Model
             return '[REDACTED]';
         }
 
-        return (string) preg_replace(
-            '/\\b(password|passphrase|token|community|secret|private[ _-]?key)\\b\\s*(?:[:=]\\s*)?[^\\s,.;]+/i',
-            '$1 [REDACTED]',
+        $credentialKey = '(?<![A-Za-z0-9_.-])(?:access[ \\t_-]?key|api[ \\t_-]?key|auth(?:orization|orisation)?|certificate|cert|client[ \\t_-]?secret|community|cookie|credential(?:s)?|key|known[ \\t_-]?hosts|login|passphrase|password|pem|private[ \\t_-]?key|private|secret|session|snmp|ssl|tls|token|user(?:[ \\t_-]?name)?|username)';
+
+        preg_match_all(
+            '/(?P<key>'.$credentialKey.')(?P<separator>[ \\t]*(?:=|:)[ \\t]*|[ \\t]+)/i',
             $value,
+            $matches,
+            PREG_OFFSET_CAPTURE,
         );
+
+        if (empty($matches['key'])) {
+            return $value;
+        }
+
+        $length = strlen($value);
+        $spans = [];
+        $matchCount = count($matches['key']);
+        $coveredUntil = -1;
+
+        preg_match_all(
+            '/[A-Za-z][A-Za-z0-9_.-]*[ \\t]*(?:=|:)[ \\t]*/',
+            $value,
+            $assignmentMatches,
+            PREG_OFFSET_CAPTURE,
+        );
+
+        for ($index = 0; $index < $matchCount; $index++) {
+            $key = trim($matches['key'][$index][0]);
+
+            if ($matches[0][$index][1] < $coveredUntil || ! self::isSensitiveKey($key)) {
+                continue;
+            }
+
+            $matchStart = $matches[0][$index][1];
+            $markerEnd = $matchStart + strlen($matches[0][$index][0]);
+            $valueStart = $markerEnd;
+            $valueEnd = $length;
+            $nextMarkerStart = $length;
+
+            foreach ($assignmentMatches[0] as $assignmentMatch) {
+                if ($assignmentMatch[1] > $matchStart) {
+                    $nextMarkerStart = $assignmentMatch[1];
+
+                    break;
+                }
+            }
+
+            if ($valueStart < $length && in_array($value[$valueStart], ['"', "'"], true)) {
+                $quote = $value[$valueStart];
+                $escaped = false;
+                $valueEnd = $valueStart + 1;
+
+                while ($valueEnd < $length) {
+                    $character = $value[$valueEnd];
+
+                    if ($character === $quote && ! $escaped) {
+                        $valueEnd++;
+
+                        break;
+                    }
+
+                    $escaped = $character === '\\' && ! $escaped;
+
+                    if ($character !== '\\') {
+                        $escaped = false;
+                    }
+
+                    $valueEnd++;
+                }
+            } else {
+                $valueEnd = $nextMarkerStart;
+                $remaining = substr($value, $valueStart, $valueEnd - $valueStart);
+
+                foreach ([',', ';', "\\r", "\\n"] as $delimiter) {
+                    $delimiterPosition = strpos($remaining, $delimiter);
+
+                    if ($delimiterPosition !== false) {
+                        $valueEnd = min($valueEnd, $valueStart + $delimiterPosition);
+                    }
+                }
+
+                while ($valueEnd > $valueStart && ctype_space($value[$valueEnd - 1])) {
+                    $valueEnd--;
+                }
+            }
+
+            $spans[] = [
+                'start' => $matchStart,
+                'end' => $valueEnd,
+                'replacement' => substr($value, $matchStart, $markerEnd - $matchStart).'[REDACTED]',
+            ];
+            $coveredUntil = $valueEnd;
+        }
+
+        for ($index = count($spans) - 1; $index >= 0; $index--) {
+            $span = $spans[$index];
+            $value = substr_replace($value, $span['replacement'], $span['start'], $span['end'] - $span['start']);
+        }
+
+        return $value;
     }
 
     private static function isSensitiveKey(string $key): bool
     {
-        $normalized = strtolower((string) preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $key));
+        $normalized = (string) preg_replace('/[^a-z0-9]/', '', strtolower($key));
 
-        if ($normalized === 'credential_profile_id') {
+        if ($normalized === 'credentialprofileid') {
             return false;
         }
 
-        $words = preg_split('/[^a-z0-9]+/', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        foreach ([
+            'accesskey', 'apikey', 'auth', 'authorization', 'authorisation', 'certificate', 'cert',
+            'community', 'credential', 'cookie', 'key', 'login', 'passphrase', 'password', 'pem',
+            'private', 'secret', 'session', 'snmp', 'ssl', 'tls', 'token', 'user', 'username',
+        ] as $part) {
+            if (str_contains($normalized, $part)) {
+                return true;
+            }
+        }
 
-        return (bool) array_intersect($words, [
-            'api', 'auth', 'authorization', 'authorisation', 'certificate', 'certificates', 'cert',
-            'community', 'credential', 'credentials', 'cookie', 'header', 'headers', 'key', 'keys',
-            'passphrase', 'password', 'pem', 'private', 'secret', 'session', 'ssl', 'tls', 'token',
-        ]);
+        return false;
     }
 }

@@ -94,6 +94,43 @@ Only one active primary profile is allowed per router. API resources expose
 credential metadata only: profile name, auth type, primary status, version, and
 timestamps. Secret values are never serialized.
 
+## Transport-dependent credential form
+
+The router create/edit form must request credentials according to the selected
+preferred transport. The form must not show irrelevant credential fields.
+
+When `ssh` is selected, show:
+
+- username, required;
+- password, required for password authentication;
+- optional private key and private-key passphrase fields for key-based devices;
+- SSH port with a default of `22`;
+- host-key verification controls using the established secure default.
+
+When `netconf` is selected, show:
+
+- username, required;
+- password, required;
+- NETCONF port with a default of `830`;
+- TLS verification fields only when the selected NETCONF mode requires TLS.
+
+When `api` is selected, show the API base URL, authentication mode, and the
+credential field required by that mode, such as an API token. When `snmp` is
+selected, show SNMP version, community or security fields, port default `161`,
+and privacy/authentication fields required by the selected SNMP security mode.
+
+Changing the transport clears unsaved fields that belong only to the previous
+transport and updates the client-side validation schema. Editing an existing
+router displays only masked credential metadata; secret inputs remain blank
+unless the user explicitly replaces the stored values. The form must never
+place decrypted secrets in a router list, view response, URL, browser storage,
+or operation result.
+
+The backend validates the credential profile against the selected transport
+before saving it. It must reject a router using SSH or NETCONF without the
+required username and password, while allowing the optional key-based SSH
+fields to be added for devices that use them.
+
 ### `router_operations`
 
 Persist both monitoring and configuration operation lifecycle state.
@@ -381,4 +418,3 @@ in the UI.
 
 No arbitrary command execution, Telnet fallback, browser-to-device connection,
 or credential exposure is part of this scope.
-

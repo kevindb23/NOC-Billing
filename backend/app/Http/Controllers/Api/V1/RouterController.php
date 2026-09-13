@@ -84,6 +84,35 @@ class RouterController extends Controller
         return response()->json(['data' => $this->resource($this->router($publicId))]);
     }
 
+    public function credentials(string $publicId): JsonResponse
+    {
+        $router = $this->router($publicId);
+        $credential = $router->primaryCredential()->first();
+
+        return response()->json(['data' => $credential ? $this->credentialService->metadata($credential) : null]);
+    }
+
+    public function updateCredentials(UpdateRouterRequest $request, string $publicId): JsonResponse
+    {
+        $router = $this->router($publicId);
+        $profile = $request->validated()['credential_profile'] ?? null;
+        if (! is_array($profile)) {
+            throw ValidationException::withMessages([
+                'credential_profile' => ['A credential profile is required.'],
+            ]);
+        }
+
+        $credential = DB::transaction(function () use ($request, $router, $profile): RouterCredential {
+            $oldSnapshot = $this->credentialSnapshot($router->primaryCredential()->first());
+            $credential = $this->credentialService->storeOrReplace($router, $profile);
+            $this->auditLogger->record($request, 'router.credentials_updated', $router, $oldSnapshot, $this->credentialSnapshot($credential));
+
+            return $credential;
+        });
+
+        return response()->json(['data' => $this->resource($router->fresh(), $credential)]);
+    }
+
     public function update(UpdateRouterRequest $request, string $publicId): JsonResponse
     {
         $router = $this->router($publicId);

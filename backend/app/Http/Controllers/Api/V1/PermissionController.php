@@ -14,20 +14,34 @@ class PermissionController extends Controller
             'Dashboard' => ['dashboard'],
             'Billing' => ['billing'],
             'Network' => ['network'],
+            'Routers' => ['routers'],
             'System' => ['system'],
             'Users' => ['users'],
             'Roles' => ['roles'],
             'Branding' => ['branding'],
             'Audit Logs' => ['audit-logs'],
         ];
-        $actionOrder = ['view' => 0, 'create' => 1, 'update' => 2, 'delete' => 3, 'export' => 4];
+        $actionOrder = [
+            'view' => 0,
+            'create' => 1,
+            'update' => 2,
+            'delete' => 3,
+            'export' => 4,
+            'test' => 5,
+            'manage' => 6,
+            'monitor' => 7,
+            'preview' => 8,
+            'apply' => 9,
+            'commit' => 10,
+            'rollback' => 11,
+        ];
         $permissions = Permission::query()->get(['id', 'name']);
 
         $groups = collect($groupDefinitions)->map(function (array $prefixes, string $group) use ($permissions, $actionOrder): array {
             $prefixOrder = array_flip($prefixes);
             $groupPermissions = $permissions
                 ->filter(function (Permission $permission) use ($prefixOrder): bool {
-                    $prefix = str($permission->name)->beforeLast('.')->toString();
+                    $prefix = str($permission->name)->before('.')->toString();
 
                     return array_key_exists($prefix, $prefixOrder);
                 })
@@ -40,8 +54,8 @@ class PermissionController extends Controller
                         return $actionComparison;
                     }
 
-                    $leftPrefix = str($left->name)->beforeLast('.')->toString();
-                    $rightPrefix = str($right->name)->beforeLast('.')->toString();
+                    $leftPrefix = str($left->name)->before('.')->toString();
+                    $rightPrefix = str($right->name)->before('.')->toString();
 
                     return ($prefixOrder[$leftPrefix] ?? PHP_INT_MAX) <=> ($prefixOrder[$rightPrefix] ?? PHP_INT_MAX);
                 })

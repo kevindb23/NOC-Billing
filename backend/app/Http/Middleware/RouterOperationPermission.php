@@ -2,22 +2,23 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\Permission;
 use App\Services\RouterOperationService;
+use App\Services\RouterPermissionAuthorizer;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
 class RouterOperationPermission
 {
+    public function __construct(private readonly RouterPermissionAuthorizer $authorizer) {}
+
     public function handle(Request $request, Closure $next, string $context = 'operation'): Response
     {
         $operation = (string) $request->input('operation');
         $user = $request->user();
         $permissions = RouterOperationService::permissionCandidates($operation, $context);
 
-        if (! $user || ! $this->hasPermission($user->getAuthIdentifier(), $permissions)) {
+        if (! $user || ! $this->authorizer->allows($user, $permissions)) {
             return response()->json(['message' => 'This action is unauthorized.'], 403);
         }
 
@@ -26,20 +27,5 @@ class RouterOperationPermission
         }
 
         return $next($request);
-    }
-
-    /** @param list<string> $permissions */
-    private function hasPermission(int|string|null $userId, array $permissions): bool
-    {
-        if ($userId === null || $permissions === []) {
-            return false;
-        }
-
-        return DB::table('role_permissions')
-            ->join('role_assignments', 'role_assignments.role_id', '=', 'role_permissions.role_id')
-            ->join('permissions', 'permissions.id', '=', 'role_permissions.permission_id')
-            ->where('role_assignments.user_id', $userId)
-            ->whereIn('permissions.name', $permissions)
-            ->exists();
     }
 }

@@ -59,6 +59,8 @@ Route::prefix('v1')->middleware(['auth:sanctum', ResolveOrganization::class])->g
     Route::get('routers', [RouterController::class, 'index'])->middleware('permission:routers.view');
     Route::post('routers', [RouterController::class, 'store'])->middleware('permission:routers.create');
     Route::get('routers/{publicId}', [RouterController::class, 'show'])->middleware('permission:routers.view');
+    Route::get('routers/{publicId}/credentials', [RouterController::class, 'credentials'])->middleware('router.credential.permission:view');
+    Route::put('routers/{publicId}/credentials', [RouterController::class, 'updateCredentials'])->middleware('router.credential.permission:manage');
     Route::put('routers/{publicId}', [RouterController::class, 'update'])->middleware('permission:routers.update');
     Route::delete('routers/{publicId}', [RouterController::class, 'destroy'])->middleware('permission:routers.delete');
     Route::post('routers/{publicId}/connection-test', [RouterController::class, 'connectionTest'])->middleware('permission:routers.test');

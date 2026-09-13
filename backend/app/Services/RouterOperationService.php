@@ -56,20 +56,19 @@ class RouterOperationService
     public static function permissionCandidates(string $operation, ?string $context = null): array
     {
         if ($context === 'history') {
-            return ['routers.operations.view', 'routers.view'];
+            return ['routers.operations.view'];
         }
 
         if (in_array($operation, self::MONITORING_OPERATIONS, true)) {
-            return ['routers.monitor', 'routers.test'];
+            return ['routers.monitor'];
         }
 
         return match ($operation) {
-            'preview_configuration' => ['routers.configuration.preview', 'routers.update'],
-            'apply_configuration' => ['routers.configuration.apply', 'routers.update'],
-            'commit_configuration' => ['routers.configuration.commit', 'routers.update'],
-            'rollback_configuration' => ['routers.configuration.rollback', 'routers.update'],
-            'validate_configuration' => ['routers.configuration.preview', 'routers.update'],
-            default => ['routers.update'],
+            'preview_configuration', 'validate_configuration' => ['routers.configuration.preview'],
+            'apply_configuration' => ['routers.configuration.apply'],
+            'commit_configuration' => ['routers.configuration.commit'],
+            'rollback_configuration' => ['routers.configuration.rollback'],
+            default => [],
         };
     }
 

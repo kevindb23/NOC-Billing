@@ -31,7 +31,7 @@ class RouterOperationApiTest extends TestCase
 
     public function test_authorized_monitoring_operation_is_queued_with_a_correlation_id_and_no_secret_snapshot(): void
     {
-        [$actor, $router] = $this->routerFixture(['routers.test', 'routers.view']);
+        [$actor, $router] = $this->routerFixture(['routers.monitor']);
         Queue::fake();
         Sanctum::actingAs($actor);
 
@@ -115,9 +115,9 @@ class RouterOperationApiTest extends TestCase
         $this->assertDatabaseCount('router_operations', 0);
     }
 
-    public function test_configuration_operation_uses_the_update_permission_hook(): void
+    public function test_configuration_operation_requires_its_specific_permission(): void
     {
-        [$actor, $router] = $this->routerFixture(['routers.update', 'routers.view']);
+        [$actor, $router] = $this->routerFixture(['routers.configuration.apply']);
         Queue::fake();
         Sanctum::actingAs($actor);
 
@@ -130,7 +130,7 @@ class RouterOperationApiTest extends TestCase
 
     public function test_monitoring_permission_cannot_submit_configuration_operation(): void
     {
-        [$actor, $router] = $this->routerFixture(['routers.test', 'routers.view']);
+        [$actor, $router] = $this->routerFixture(['routers.monitor']);
         Sanctum::actingAs($actor);
 
         $this->postJson('/api/v1/routers/'.$router->public_id.'/operations', [
@@ -141,7 +141,7 @@ class RouterOperationApiTest extends TestCase
 
     public function test_operation_history_can_be_listed_and_shown_without_credentials(): void
     {
-        [$actor, $router] = $this->routerFixture(['routers.view']);
+        [$actor, $router] = $this->routerFixture(['routers.operations.view']);
         Sanctum::actingAs($actor);
         $operation = RouterOperation::create([
             'router_id' => $router->id,
@@ -162,6 +162,42 @@ class RouterOperationApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.status', 'succeeded')
             ->assertJsonMissing(['router-password']);
+    }
+
+    public function test_history_requires_the_operations_view_permission(): void
+    {
+        [$actor, $router] = $this->routerFixture(['routers.view']);
+        Sanctum::actingAs($actor);
+
+        $this->getJson('/api/v1/routers/'.$router->public_id.'/operations')->assertForbidden();
+    }
+
+    public function test_credential_manager_can_replace_credentials_but_cannot_commit(): void
+    {
+        [$actor, $router] = $this->routerFixture(['routers.credentials.manage']);
+        Sanctum::actingAs($actor);
+
+        $this->putJson('/api/v1/routers/'.$router->public_id.'/credentials', [
+            'credential_profile' => ['name' => 'primary', 'api_token' => 'replacement-token'],
+        ])->assertOk()->assertJsonPath('data.credential_version', 2);
+
+        $this->postJson('/api/v1/routers/'.$router->public_id.'/operations', [
+            'operation' => 'commit_configuration',
+            'parameters' => [],
+        ])->assertForbidden();
+    }
+
+    public function test_administrator_can_run_configuration_operations_without_each_new_permission(): void
+    {
+        [$actor, $router] = $this->routerFixture([]);
+        Role::query()->whereHas('users', fn ($query) => $query->whereKey($actor->id))->firstOrFail()->update(['name' => 'Administrator']);
+        Queue::fake();
+        Sanctum::actingAs($actor);
+
+        $this->postJson('/api/v1/routers/'.$router->public_id.'/operations', [
+            'operation' => 'commit_configuration',
+            'parameters' => [],
+        ])->assertAccepted();
     }
 
     public function test_job_sends_decrypted_credentials_only_to_gateway_and_updates_last_contact_after_success(): void
@@ -225,7 +261,7 @@ class RouterOperationApiTest extends TestCase
             'driver' => 'mikrotik_router',
             'preferred_transport' => 'api',
             'status' => 'active',
-            'capabilities' => ['test_connection', 'system_info', 'get_system_info', 'get_interfaces', 'preview_configuration', 'apply_configuration'],
+            'capabilities' => ['test_connection', 'system_info', 'get_system_info', 'get_interfaces', 'preview_configuration', 'apply_configuration', 'commit_configuration'],
             'management_ip' => '192.0.2.10',
         ]);
         app(RouterCredentialService::class)->storeOrReplace($router, [

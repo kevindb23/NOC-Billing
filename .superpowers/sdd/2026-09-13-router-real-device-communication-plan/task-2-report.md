@@ -96,6 +96,18 @@ PHP lint: passed
 git diff --check: passed
 ```
 
+## Fix round 3
+
+Credential-assignment detection now accepts JSON-style quoted keys such as
+`"username":"..."`, closing the final redaction gap identified during review.
+
+Validation:
+
+```text
+PHP lint: passed
+git diff --check: passed
+```
+
 The normal PHPUnit run remains blocked by the previously reported dependency
 and isolated migration-table limitation.
 

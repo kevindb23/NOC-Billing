@@ -110,7 +110,7 @@ class RouterOperation extends Model
 
         $credentialKey = '(?<![A-Za-z0-9_.-])(?:access[ \\t_-]?key|api[ \\t_-]?key|auth(?:orization|orisation)?|certificate|cert|client[ \\t_-]?secret|community|cookie|credential(?:s)?|header(?:s)?|key|known[ \\t_-]?hosts|login|passphrase|password|pem|private[ \\t_-]?key|private|secret|session|snmp|ssl|tls|token|user(?:[ \\t_-]?name)?|username)(?![A-Za-z0-9_.-])';
 
-        if (preg_match('/'.$credentialKey.'[ \\t]*(?:=|:)/i', $value)) {
+        if (preg_match('/'.$credentialKey.'[\"\']?[ \\t]*(?:=|:)/i', $value)) {
             return '[REDACTED]';
         }
 

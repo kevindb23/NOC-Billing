@@ -70,23 +70,54 @@ final class ConnectionResult
         ];
     }
 
-    private static function redact(mixed $value): mixed
+    private static function redact(mixed $value, bool $credentialContainer = false): mixed
     {
+        if (is_string($value) && preg_match('/-----BEGIN .*?(?:PRIVATE KEY|CERTIFICATE)-----/i', $value)) {
+            return '[REDACTED]';
+        }
+
         if (! is_array($value)) {
             return $value;
         }
 
         $redacted = [];
         foreach ($value as $key => $item) {
-            if (is_string($key) && preg_match('/password|secret|token|credential|private[_-]?key|api[_-]?key|community/i', $key)) {
+            if ($credentialContainer && ! is_array($item)) {
                 $redacted[$key] = '[REDACTED]';
 
                 continue;
             }
 
-            $redacted[$key] = self::redact($item);
+            if (is_string($key) && self::isSensitiveKey($key)) {
+                $redacted[$key] = is_array($item) && self::isCredentialContainer($key)
+                    ? self::redact($item, true)
+                    : '[REDACTED]';
+
+                continue;
+            }
+
+            $redacted[$key] = self::redact($item, $credentialContainer);
         }
 
         return $redacted;
+    }
+
+    private static function isSensitiveKey(string $key): bool
+    {
+        $normalized = strtolower((string) preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $key));
+        $words = preg_split('/[^a-z0-9]+/', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return (bool) array_intersect($words, [
+            'api', 'auth', 'authorization', 'authorisation', 'certificate', 'certificates', 'cert',
+            'community', 'credential', 'credentials', 'cookie', 'header', 'headers', 'key', 'keys',
+            'passphrase', 'password', 'pem', 'private', 'secret', 'session', 'token',
+        ]);
+    }
+
+    private static function isCredentialContainer(string $key): bool
+    {
+        $normalized = strtolower((string) preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $key));
+
+        return in_array($normalized, ['certificate', 'certificates', 'headers', 'header', 'tls', 'ssl'], true);
     }
 }

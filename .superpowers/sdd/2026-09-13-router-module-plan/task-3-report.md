@@ -29,3 +29,20 @@ vendor/bin/pint --test ...
 - No credentials or secret fields are exposed by the DTOs.
 - No unrelated files were modified.
 - Live device communication and driver registry wiring remain later tasks.
+
+## Round 1 review fix
+
+- Expanded nested credential redaction to cover authorization, passphrases, headers, certificates, PEM/private-key material, tokens, credentials, cookies, sessions, and related key variants.
+- Added content-based redaction for PEM certificates and private keys.
+- Added nested credential tests for both result DTOs.
+- Added unknown-status rejection coverage for `DeviceStatusResult`.
+
+Verification after the fix:
+
+```text
+php artisan test tests/Unit/RouterDriverRegistryTest.php tests/Feature/RouterApiTest.php
+8 tests passed, 42 assertions
+
+vendor/bin/pint --test ...
+4 files passed
+```

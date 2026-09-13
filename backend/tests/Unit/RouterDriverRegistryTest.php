@@ -107,6 +107,64 @@ class RouterDriverRegistryTest extends TestCase
         ], $result->toArray());
     }
 
+    public function test_connection_result_redacts_nested_credential_payloads(): void
+    {
+        $result = new ConnectionResult(
+            status: ConnectionResult::STATUS_CONNECTED,
+            driver: 'juniper_router',
+            capabilities: ['system_info'],
+            message: 'Router connection verified.',
+            checkedAt: CarbonImmutable::now(),
+            details: [
+                'authorization' => 'Bearer connection-secret',
+                'passphrase' => 'router-passphrase',
+                'headers' => ['Authorization' => 'Basic header-secret'],
+                'certificate' => ['pem' => 'certificate-secret'],
+                'private_key' => 'private-key-secret',
+                'nested' => ['client_secret' => 'nested-secret', 'latency_ms' => 8],
+            ],
+        );
+
+        $details = $result->toArray()['details'];
+
+        $this->assertSame('[REDACTED]', $details['authorization']);
+        $this->assertSame('[REDACTED]', $details['passphrase']);
+        $this->assertSame('[REDACTED]', $details['headers']['Authorization']);
+        $this->assertSame('[REDACTED]', $details['certificate']['pem']);
+        $this->assertSame('[REDACTED]', $details['private_key']);
+        $this->assertSame('[REDACTED]', $details['nested']['client_secret']);
+        $this->assertSame(8, $details['nested']['latency_ms']);
+    }
+
+    public function test_device_status_result_redacts_nested_credential_payloads(): void
+    {
+        $result = new DeviceStatusResult(
+            status: DeviceStatusResult::STATUS_CONNECTED,
+            driver: 'cisco_router',
+            message: 'System information retrieved.',
+            checkedAt: CarbonImmutable::now(),
+            details: [
+                'authorization_header' => 'Bearer status-secret',
+                'passphrase' => 'status-passphrase',
+                'tls' => [
+                    'headers' => ['X-Api-Key' => 'header-secret'],
+                    'certificate_chain' => ['certificate-secret'],
+                    'client_private_key' => 'key-secret',
+                ],
+                'safe' => ['uptime_source' => 'snmp'],
+            ],
+        );
+
+        $details = $result->toArray()['details'];
+
+        $this->assertSame('[REDACTED]', $details['authorization_header']);
+        $this->assertSame('[REDACTED]', $details['passphrase']);
+        $this->assertSame('[REDACTED]', $details['tls']['headers']['X-Api-Key']);
+        $this->assertSame('[REDACTED]', $details['tls']['certificate_chain']);
+        $this->assertSame('[REDACTED]', $details['tls']['client_private_key']);
+        $this->assertSame('snmp', $details['safe']['uptime_source']);
+    }
+
     public function test_driver_contract_exposes_normalized_operations(): void
     {
         $driver = new TestRouterDriver;
@@ -127,6 +185,18 @@ class RouterDriverRegistryTest extends TestCase
             status: 'online',
             driver: 'mock_router',
             capabilities: [],
+            message: 'Invalid result.',
+            checkedAt: CarbonImmutable::now(),
+        );
+    }
+
+    public function test_device_status_result_rejects_unknown_status_values(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new DeviceStatusResult(
+            status: 'online',
+            driver: 'mock_router',
             message: 'Invalid result.',
             checkedAt: CarbonImmutable::now(),
         );

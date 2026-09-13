@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, SecretStr
 
 
-TransportName = Literal["api", "ssh", "netconf", "snmp", "mock"]
+TransportName = Literal["api", "ssh", "netconf", "snmp"]
 
 
 class DeviceTarget(BaseModel):

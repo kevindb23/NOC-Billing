@@ -9,7 +9,7 @@ from typing_extensions import Annotated
 from .devices import DeviceCredentials, DeviceTarget
 
 
-OperationName = Literal["connection_test", "system_info"]
+OperationName = Literal["test_connection", "get_system_info"]
 CorrelationId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 
 

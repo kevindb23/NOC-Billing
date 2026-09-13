@@ -17,6 +17,29 @@ def test_run_command_request_is_rejected_by_the_safe_operation_contract() -> Non
             parameters={"command": "show secret"},
             device=DeviceTarget(
                 driver="mikrotik_router",
+                transport="api",
+                hostname="edge-router.example.test",
+            ),
+        )
+
+
+def test_approved_generic_operation_names_are_accepted() -> None:
+    target = DeviceTarget(
+        driver="mikrotik_router",
+        transport="api",
+        hostname="edge-router.example.test",
+    )
+
+    assert OperationRequest(operation="test_connection", device=target).operation == "test_connection"
+    assert OperationRequest(operation="get_system_info", device=target).operation == "get_system_info"
+
+
+def test_mock_is_rejected_as_a_transport_for_real_operations() -> None:
+    with pytest.raises(ValidationError):
+        OperationRequest(
+            operation="test_connection",
+            device=DeviceTarget(
+                driver="mikrotik_router",
                 transport="mock",
                 hostname="edge-router.example.test",
             ),
@@ -81,10 +104,10 @@ def test_credentials_are_available_to_transports_but_not_raw_serialization() -> 
 
 def test_operation_result_has_a_normalized_status_and_safe_details() -> None:
     result = OperationResult(
-        operation="connection_test",
+        operation="test_connection",
         status="not_configured",
         driver="mikrotik_router",
-        transport="mock",
+        transport="api",
         correlation_id="request-123",
         message="No router transport is configured.",
         checked_at=datetime(2026, 9, 13, tzinfo=timezone.utc),

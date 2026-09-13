@@ -21,11 +21,7 @@ class AuditLogController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
-        $organization = $request->attributes->get('organization');
         $query = AuditLog::with('actor')->latest();
-        if ($organization) {
-            $query->where('organization_id', $organization->id);
-        }
 
         $query->when($filters['search'] ?? null, function ($builder, string $search): void {
             $builder->where(function ($nested) use ($search): void {

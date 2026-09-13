@@ -31,4 +31,11 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'network_automation' => [
+        'url' => env('NETWORK_AUTOMATION_URL'),
+        'token' => env('NETWORK_AUTOMATION_TOKEN'),
+        'connect_timeout' => (float) env('NETWORK_AUTOMATION_CONNECT_TIMEOUT', 5),
+        'timeout' => (float) env('NETWORK_AUTOMATION_TIMEOUT', 60),
+    ],
+
 ];

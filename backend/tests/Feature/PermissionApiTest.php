@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -15,88 +14,63 @@ class PermissionApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_user_with_the_catalog_permission_can_read_the_catalog(): void
+    public function test_user_with_the_catalog_permission_can_read_the_catalog_without_an_installation_header(): void
     {
-        [$user, $organization] = $this->userWithPermission('roles.view');
+        $user = $this->userWithPermission('roles.view');
         (new PermissionSeeder())->run();
         Sanctum::actingAs($user);
 
-        $response = $this->withHeader('X-Organization-Id', $organization->public_id)
-            ->getJson('/api/v1/permissions');
-
-        $response->assertOk()->assertJsonStructure([
-            'data' => [['group', 'permissions' => [['id', 'name', 'action']]]],
-        ]);
+        $this->getJson('/api/v1/permissions')
+            ->assertOk()
+            ->assertJsonStructure(['data' => [['group', 'permissions' => [['id', 'name', 'action']]]]]);
     }
 
     public function test_user_without_the_catalog_permission_receives_json_forbidden(): void
     {
-        [$user, $organization] = $this->userWithPermission('users.view');
+        $user = $this->userWithPermission('users.view');
         (new PermissionSeeder())->run();
         Sanctum::actingAs($user);
 
-        $response = $this->withHeader('X-Organization-Id', $organization->public_id)
-            ->getJson('/api/v1/permissions');
-
-        $response->assertForbidden()
+        $this->getJson('/api/v1/permissions')
+            ->assertForbidden()
             ->assertJson(['message' => 'This action is unauthorized.']);
     }
 
-    public function test_catalog_permission_does_not_cross_organization_boundaries(): void
+    public function test_catalog_permission_is_installation_wide(): void
     {
-        $organization = Organization::factory()->create();
-        $otherOrganization = Organization::factory()->create();
-        $user = User::factory()->create();
-        $role = Role::create(['organization_id' => $otherOrganization->id, 'name' => 'Other organization manager']);
-        $permission = Permission::create(['name' => 'roles.view']);
-
-        $organization->users()->attach($user, ['is_default' => true, 'status' => 'active']);
-        $otherOrganization->users()->attach($user, ['is_default' => false, 'status' => 'active']);
-        $role->permissions()->attach($permission);
-        $role->users()->attach($user, ['organization_id' => $otherOrganization->id]);
+        $user = $this->userWithPermission('roles.view');
+        (new PermissionSeeder())->run();
         Sanctum::actingAs($user);
 
-        $response = $this->withHeader('X-Organization-Id', $organization->public_id)
-            ->getJson('/api/v1/permissions');
-
-        $response->assertForbidden()
-            ->assertJson(['message' => 'This action is unauthorized.']);
+        $this->withHeader('X-Organization-Id', 'legacy-header-is-ignored')
+            ->getJson('/api/v1/permissions')
+            ->assertOk();
     }
 
     public function test_catalog_uses_authority_groups_and_action_order(): void
     {
-        [$user, $organization] = $this->userWithPermission('roles.view');
+        $user = $this->userWithPermission('roles.view');
         (new PermissionSeeder())->run();
         Sanctum::actingAs($user);
 
-        $response = $this->withHeader('X-Organization-Id', $organization->public_id)
-            ->getJson('/api/v1/permissions');
-
-        $response->assertOk();
-        $catalog = collect($response->json('data'));
-        $this->assertSame(['Dashboard', 'Billing', 'Network', 'System', 'Users', 'Roles', 'Branding', 'Audit Logs'], $catalog->pluck('group')->all());
-        $this->assertSame(['view', 'create', 'update', 'delete', 'export'], collect($catalog->get(0)['permissions'])->pluck('action')->all());
-        $this->assertSame(['view', 'create', 'update', 'delete', 'export'], collect($catalog->get(3)['permissions'])->pluck('action')->all());
-        $this->assertSame(['view', 'create', 'update', 'delete', 'export'], collect($catalog->get(4)['permissions'])->pluck('action')->all());
-        $this->assertSame(['view', 'update'], collect($catalog->get(6)['permissions'])->pluck('action')->all());
-        $this->assertSame(['view', 'export'], collect($catalog->get(7)['permissions'])->pluck('action')->all());
+        $catalog = collect($this->getJson('/api/v1/permissions')->assertOk()->json('data'));
+        $this->assertContains('Paymongo', $catalog->pluck('group')->all());
+        $this->assertContains('API Tokens', $catalog->pluck('group')->all());
+        $paymongo = $catalog->firstWhere('group', 'Paymongo');
+        $this->assertSame(['view', 'update', 'test'], collect($paymongo['permissions'])->pluck('action')->all());
+        $this->assertSame($catalog->pluck('group')->sort()->values()->all(), $catalog->pluck('group')->values()->all());
         foreach ($catalog->pluck('permissions')->flatten(1) as $permission) {
-            $this->assertArrayHasKey('id', $permission);
             $this->assertSame(Permission::where('name', $permission['name'])->value('id'), $permission['id']);
         }
     }
 
-    private function userWithPermission(string $permissionName): array
+    private function userWithPermission(string $permissionName): User
     {
-        $organization = Organization::factory()->create();
         $user = User::factory()->create();
-        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Permission manager']);
-        $permission = Permission::create(['name' => $permissionName]);
+        $role = Role::create(['name' => 'Permission manager']);
+        $role->permissions()->attach(Permission::create(['name' => $permissionName]));
+        $user->roles()->attach($role);
 
-        $organization->users()->attach($user, ['is_default' => true, 'status' => 'active']);
-        $role->permissions()->attach($permission);
-        $role->users()->attach($user, ['organization_id' => $organization->id]);
-
-        return [$user, $organization];
+        return $user;
     }
 }

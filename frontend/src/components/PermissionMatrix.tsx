@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import type { PermissionGroup } from '@/lib/usersRoles'
 
-const actions = ['view', 'create', 'update', 'delete', 'export'] as const
-const modules = [
+const actions = ['view', 'create', 'update', 'delete', 'test', 'export'] as const
+const legacyModules = [
   ['Dashboard', 'dashboard'],
   ['Billing', 'billing'],
   ['Network', 'network'],
@@ -16,8 +16,9 @@ const modules = [
 function normalizeGroups(groups: PermissionGroup[]): PermissionGroup[] {
   const legacySystem = groups.find(group => group.group === 'System')
   const explicitGroups = new Map(groups.filter(group => group.group !== 'System').map(group => [group.group, group.permissions]))
+  const dynamicGroups = [...explicitGroups.keys()].filter(group => !legacyModules.some(([label]) => label === group))
 
-  return modules.map(([group, prefix]) => {
+  return [...legacyModules.map(([group, prefix]) => [group, prefix] as const), ...dynamicGroups.map(group => [group, group.toLowerCase().replaceAll(' ', '-')] as const)].map(([group, prefix]) => {
     const permissions = [
       ...(explicitGroups.get(group) || []),
       ...(legacySystem?.permissions.filter(permission => permission.name.startsWith(`${prefix}.`)) || []),
@@ -35,7 +36,7 @@ export function PermissionMatrix({ groups, selectedIds, onChange }: { groups: Pe
     onChange(allSelected ? selectedIds.filter(id => !ids.includes(id)) : [...new Set([...selectedIds, ...ids])])
   }
 
-  return <div className="overflow-x-auto rounded-lg border border-border/70 bg-card">
+  return <div className="billing-modal-scroll max-h-[min(42vh,26rem)] overflow-auto rounded-lg border border-border/70 bg-card">
     <table className="min-w-[720px] w-full table-fixed text-xs">
       <colgroup><col className="w-[40%]" />{actions.map(action => <col className="w-[12%]" key={action} />)}</colgroup>
       <thead><tr className="border-b bg-muted/35"><th className="px-3 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Permission group</th>{actions.map(action => <th className="px-2 py-2.5 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground" key={action}>{action}</th>)}</tr></thead>

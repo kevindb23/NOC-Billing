@@ -18,34 +18,25 @@ class AuthController extends Controller
         $credentials = $request->validate(['email' => ['required', 'email'], 'password' => ['required', 'string']]);
         $user = \App\Models\User::where('email', $credentials['email'])->where('status', 'active')->first();
         abort_unless($user && Hash::check($credentials['password'], $user->password), 422, 'The provided credentials are invalid.');
-        $organization = $user->organizations()
-            ->wherePivot('status', 'active')
-            ->when($request->header('X-Organization-Id'), fn ($query, string $organizationId) => $query->where('organizations.public_id', $organizationId))
-            ->orderByDesc('organization_user.is_default')
-            ->first();
-        abort_unless($organization, 403, 'The user has no active organization membership.');
-        $token = $user->createToken('billing-portal')->plainTextToken;
+        $accessToken = $user->createToken('billing-portal');
+        $token = $accessToken->plainTextToken;
 
         return response()->json(['data' => [
             'token' => $token,
             'user' => $user,
-            'organization' => $organization,
-            'permissions' => $this->permissions->permissionsFor($user, $organization)->pluck('name')->sort()->values()->all(),
-            'is_superadmin' => $this->permissions->isSuperAdmin($user, $organization),
-            'branding' => $this->branding->resolved($organization),
+            'permissions' => $this->permissions->permissionsFor($user)->pluck('name')->sort()->values()->all(),
+            'is_superadmin' => $this->permissions->isSuperAdmin($user),
+            'branding' => $this->branding->resolved(),
         ]]);
     }
 
     public function me(Request $request): JsonResponse
     {
-        $organization = $request->attributes->get('organization');
-
         return response()->json(['data' => [
             'user' => $request->user(),
-            'organization' => $organization,
-            'permissions' => $this->permissions->permissionsFor($request->user(), $organization)->pluck('name')->sort()->values()->all(),
-            'is_superadmin' => $this->permissions->isSuperAdmin($request->user(), $organization),
-            'branding' => $this->branding->resolved($organization),
+            'permissions' => $this->permissions->permissionsFor($request->user())->pluck('name')->sort()->values()->all(),
+            'is_superadmin' => $this->permissions->isSuperAdmin($request->user()),
+            'branding' => $this->branding->resolved(),
         ]]);
     }
 

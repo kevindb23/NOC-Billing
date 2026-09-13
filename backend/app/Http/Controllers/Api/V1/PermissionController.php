@@ -10,51 +10,56 @@ class PermissionController extends Controller
 {
     public function index(): JsonResponse
     {
-        $groupDefinitions = [
-            'Dashboard' => ['dashboard'],
-            'Billing' => ['billing'],
-            'Network' => ['network'],
-            'System' => ['system'],
-            'Users' => ['users'],
-            'Roles' => ['roles'],
-            'Branding' => ['branding'],
-            'Audit Logs' => ['audit-logs'],
+        $actionOrder = [
+            'view' => 0,
+            'create' => 1,
+            'update' => 2,
+            'delete' => 3,
+            'test' => 4,
+            'export' => 5,
+            'manage' => 6,
+            'monitor' => 7,
+            'preview' => 8,
+            'apply' => 9,
+            'commit' => 10,
+            'rollback' => 11,
         ];
-        $actionOrder = ['view' => 0, 'create' => 1, 'update' => 2, 'delete' => 3, 'export' => 4];
         $permissions = Permission::query()->get(['id', 'name']);
+        $labels = [
+            'api-tokens' => 'API Tokens',
+            'audit-logs' => 'Audit Logs',
+            'billing-accounts' => 'Billing Accounts',
+            'billing-statements' => 'Billing Statements',
+            'subscriber-services' => 'Subscriber Services',
+            'paymongo' => 'Paymongo',
+            'gcash' => 'GCash',
+        ];
+        $legacyGroups = collect(['Dashboard', 'Billing', 'Network', 'System', 'Users', 'Roles', 'Branding', 'Audit Logs'])
+            ->mapWithKeys(fn (string $group): array => [$group => collect()]);
+        $grouped = $permissions->groupBy(fn (Permission $permission): string => str($permission->name)->beforeLast('.')->toString());
+        $groups = $grouped->map(function ($items, string $prefix) use ($actionOrder, $labels): array {
+            $group = $labels[$prefix] ?? str($prefix)->replace('-', ' ')->title()->toString();
+            $sorted = $items->sort(function (Permission $left, Permission $right) use ($actionOrder): int {
+                $leftAction = str($left->name)->afterLast('.')->toString();
+                $rightAction = str($right->name)->afterLast('.')->toString();
+                $actionComparison = ($actionOrder[$leftAction] ?? PHP_INT_MAX) <=> ($actionOrder[$rightAction] ?? PHP_INT_MAX);
 
-        $groups = collect($groupDefinitions)->map(function (array $prefixes, string $group) use ($permissions, $actionOrder): array {
-            $prefixOrder = array_flip($prefixes);
-            $groupPermissions = $permissions
-                ->filter(function (Permission $permission) use ($prefixOrder): bool {
-                    $prefix = str($permission->name)->beforeLast('.')->toString();
+                return $actionComparison !== 0 ? $actionComparison : $left->name <=> $right->name;
+            })->map(fn (Permission $permission): array => [
+                'id' => $permission->id,
+                'name' => $permission->name,
+                'action' => str($permission->name)->afterLast('.')->toString(),
+            ])->values()->all();
 
-                    return array_key_exists($prefix, $prefixOrder);
-                })
-                ->sort(function (Permission $left, Permission $right) use ($actionOrder, $prefixOrder): int {
-                    $leftAction = str($left->name)->afterLast('.')->toString();
-                    $rightAction = str($right->name)->afterLast('.')->toString();
-                    $actionComparison = ($actionOrder[$leftAction] ?? PHP_INT_MAX) <=> ($actionOrder[$rightAction] ?? PHP_INT_MAX);
+            return ['group' => $group, 'permissions' => $sorted];
+        })->sortBy('group')->values();
 
-                    if ($actionComparison !== 0) {
-                        return $actionComparison;
-                    }
-
-                    $leftPrefix = str($left->name)->beforeLast('.')->toString();
-                    $rightPrefix = str($right->name)->beforeLast('.')->toString();
-
-                    return ($prefixOrder[$leftPrefix] ?? PHP_INT_MAX) <=> ($prefixOrder[$rightPrefix] ?? PHP_INT_MAX);
-                })
-                ->map(fn (Permission $permission): array => [
-                    'id' => $permission->id,
-                    'name' => $permission->name,
-                    'action' => str($permission->name)->afterLast('.')->toString(),
-                ])
+        $groups = $groups->concat(
+            $legacyGroups
+                ->filter(fn ($items, $group) => ! $groups->contains('group', $group))
+                ->map(fn ($items, $group): array => ['group' => $group, 'permissions' => []])
                 ->values()
-                ->all();
-
-            return ['group' => $group, 'permissions' => $groupPermissions];
-        })->values();
+        )->sortBy('group')->values();
 
         return response()->json(['data' => $groups]);
     }

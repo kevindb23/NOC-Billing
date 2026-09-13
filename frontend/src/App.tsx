@@ -29,7 +29,6 @@ import {
   TagIcon,
   UserGearIcon,
   UsersThreeIcon,
-  WifiHighIcon,
   XIcon,
 } from '@phosphor-icons/react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -46,6 +45,9 @@ import { hasPermission } from './lib/usersRoles'
 import { readStoredView, type View } from './lib/viewState'
 import { DashboardPage } from './components/DashboardPage'
 import { BrandingPage } from './components/BrandingPage'
+import { EmailPage } from './components/EmailPage'
+import { NotificationsPage } from './components/NotificationsPage'
+import { ApiTokensPage } from './components/ApiTokensPage'
 import { NetworkModulePage } from './components/NetworkModulePage'
 import { ResourceTablePage } from './components/ResourceTablePage'
 import { SubscribersPage } from './components/SubscribersPage'
@@ -55,10 +57,12 @@ import { ConfirmProvider } from './components/ConfirmProvider'
 import { networkModules, type NetworkModule } from './lib/networkModules'
 import { systemModules, type SystemModule } from './lib/systemModules'
 import type { BrandingValues } from './lib/branding'
+import { PaymongoPage } from './components/PaymongoPage'
+import { GcashPage } from './components/GcashPage'
 
 type Session = { token: string; user: { name: string; email: string }; permissions?: string[]; is_superadmin?: boolean; branding?: BrandingValues }
-type AppView = View | NetworkModule | SystemModule
-type NavSection = 'Dashboard' | 'Billing' | 'Network' | 'System'
+type AppView = View | NetworkModule | SystemModule | 'Paymongo' | 'GCash'
+type NavSection = 'Dashboard' | 'Billing' | 'Payment Gateway' | 'Network' | 'System'
 type NavItem = { key: AppView; label: string; section: NavSection }
 type IconName = AppView
 
@@ -68,12 +72,14 @@ const BRAND_MARK = import.meta.env.VITE_BRAND_MARK || '1W'
 const nav: NavItem[] = [
   { key: 'overview', label: 'Overview', section: 'Dashboard' },
   { key: 'subscribers', label: 'Subscribers', section: 'Dashboard' },
+  { key: 'subscriptions', label: 'Subscriptions', section: 'Dashboard' },
   { key: 'accounts', label: 'Billing accounts', section: 'Billing' },
+  { key: 'billing-statements', label: 'Billing statements', section: 'Billing' },
   { key: 'plans', label: 'Plans', section: 'Billing' },
-  { key: 'services', label: 'Subscriber services', section: 'Billing' },
-  { key: 'subscriptions', label: 'Subscriptions', section: 'Billing' },
   { key: 'invoices', label: 'Invoices', section: 'Billing' },
   { key: 'payments', label: 'Payments', section: 'Billing' },
+  { key: 'Paymongo', label: 'Paymongo', section: 'Payment Gateway' },
+  { key: 'GCash', label: 'GCash', section: 'Payment Gateway' },
   ...networkModules.map(module => ({ key: module, label: module, section: 'Network' as const })),
   ...systemModules.map(module => ({ key: module, label: module, section: 'System' as const })),
 ]
@@ -91,10 +97,10 @@ function isModuleView(view: AppView): view is NetworkModule | SystemModule {
   return isNetworkModule(view) || systemModules.includes(view as SystemModule)
 }
 
-const navSections = ['Dashboard', 'Billing', 'Network', 'System'] as const
+const navSections = ['Dashboard', 'Billing', 'Payment Gateway', 'Network', 'System'] as const
 
 function openAllSections(): Record<NavSection, boolean> {
-  return { Dashboard: true, Billing: true, Network: true, System: true }
+  return { Dashboard: true, Billing: false, 'Payment Gateway': false, Network: false, System: false }
 }
 
 function App() {
@@ -105,6 +111,13 @@ function App() {
   })
   const [view, setView] = useState<AppView>(readStoredAppView)
   const [error, setError] = useState('')
+  useEffect(() => {
+    const payment = new URLSearchParams(window.location.search).get('paymongo_payment')
+    if (!payment) return
+    setView('Paymongo')
+    window.history.replaceState({}, document.title, window.location.pathname)
+    notify[payment === 'success' ? 'success' : 'info'](payment === 'success' ? 'Test payment completed successfully.' : 'Test payment was cancelled.')
+  }, [])
   useEffect(() => { document.title = session?.branding?.organization_name || BRAND_NAME }, [session?.branding?.organization_name])
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); localStorage.setItem('isp-theme', theme) }, [theme])
   useEffect(() => {
@@ -127,6 +140,11 @@ function App() {
     if (session?.is_superadmin === false && view === 'Users' && !hasPermission(session?.permissions, 'users.view')) setView('overview')
     if (session?.is_superadmin === false && view === 'Roles' && !hasPermission(session?.permissions, 'roles.view')) setView('overview')
     if (session?.is_superadmin === false && view === 'Branding' && !hasPermission(session?.permissions, 'branding.view')) setView('overview')
+    if (session?.is_superadmin === false && view === 'Email' && !hasPermission(session?.permissions, 'email.view')) setView('overview')
+    if (session?.is_superadmin === false && view === 'Notifications' && !hasPermission(session?.permissions, 'notifications.view')) setView('overview')
+    if (session?.is_superadmin === false && view === 'API Tokens' && !hasPermission(session?.permissions, 'api-tokens.view')) setView('overview')
+    if (session?.is_superadmin === false && view === 'Paymongo' && !hasPermission(session?.permissions, 'paymongo.view')) setView('overview')
+    if (session?.is_superadmin === false && view === 'GCash' && !hasPermission(session?.permissions, 'gcash.view')) setView('overview')
     if (session?.is_superadmin === false && view === 'Routers' && !hasPermission(session?.permissions, 'routers.view')) setView('overview')
   }, [session?.is_superadmin, session?.permissions, view])
   const signIn = (next: Session) => { localStorage.setItem('isp-session', JSON.stringify(next)); setSession(next); setError('') }
@@ -215,6 +233,8 @@ function Shell({ session, view, setView, signOut, theme, setTheme, onBrandingSav
     if (item.key === 'Users') return hasPermission(session.permissions, 'users.view')
     if (item.key === 'Roles') return hasPermission(session.permissions, 'roles.view')
     if (item.key === 'Branding') return hasPermission(session.permissions, 'branding.view')
+    if (item.key === 'Paymongo') return hasPermission(session.permissions, 'paymongo.view')
+    if (item.key === 'GCash') return hasPermission(session.permissions, 'gcash.view')
     if (item.key === 'Routers') return hasPermission(session.permissions, 'routers.view')
     return true
   })
@@ -230,7 +250,10 @@ function Shell({ session, view, setView, signOut, theme, setTheme, onBrandingSav
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as Partial<Record<NavSection, boolean>>
-        if (navSections.every(section => typeof parsed[section] === 'boolean')) return parsed as Record<NavSection, boolean>
+        if (navSections.every(section => typeof parsed[section] === 'boolean')) {
+          const open = navSections.find(section => section !== 'Dashboard' && parsed[section]) || 'Dashboard'
+          return navSections.reduce((state, section) => ({ ...state, [section]: section === open }), {} as Record<NavSection, boolean>)
+        }
         return openAllSections()
       } catch {
         return openAllSections()
@@ -239,13 +262,13 @@ function Shell({ session, view, setView, signOut, theme, setTheme, onBrandingSav
     return openAllSections()
   })
   const toggleSection = (section: NavSection) => setExpandedSections(current => {
-    const next = { ...current, [section]: !current[section] }
+    const next = navSections.reduce((state, item) => ({ ...state, [item]: item === section ? !current[item] : false }), {} as Record<NavSection, boolean>)
     localStorage.setItem('isp-expanded-sections', JSON.stringify(next))
     return next
   })
   const selectNavItem = (item: NavItem) => {
     setView(item.key)
-    const next = { ...expandedSections, [item.section]: true }
+    const next = navSections.reduce((state, section) => ({ ...state, [section]: section === item.section }), {} as Record<NavSection, boolean>)
     setExpandedSections(next)
     localStorage.setItem('isp-expanded-sections', JSON.stringify(next))
   }
@@ -257,7 +280,7 @@ function Shell({ session, view, setView, signOut, theme, setTheme, onBrandingSav
       <nav className={cn("mt-5 flex flex-1 flex-col gap-4 overflow-y-auto", sidebarCollapsed ? "w-full px-2" : "px-3")} aria-label="Primary navigation">{navSections.map(section => <div className="flex flex-col gap-1" key={section}>{section === "Dashboard" ? <p className={cn("px-3 pb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/45", sidebarCollapsed && "sr-only")}>Dashboard</p> : <button type="button" className={cn("flex items-center justify-between px-3 pb-1 text-left text-[10px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground/75", sidebarCollapsed && "sr-only")} onClick={() => toggleSection(section)} aria-expanded={expandedSections[section]}><span>{section}</span><CaretRightIcon size={12} className={cn("transition-transform", expandedSections[section] && "rotate-90")} aria-hidden="true" /></button>}{(section === "Dashboard" || expandedSections[section]) && visibleNav.filter(item => item.section === section).map(item => <Button key={item.key} variant="ghost" className={cn("w-full justify-start gap-2.5 rounded-xl px-3 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground", sidebarCollapsed && "justify-center px-2", view === item.key && "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground")} onClick={() => selectNavItem(item)} aria-current={view === item.key ? "page" : undefined} title={sidebarCollapsed ? item.label : undefined}><NavIcon name={item.key} /><span className={sidebarCollapsed ? "sr-only" : undefined}>{item.label}</span></Button>)}</div>)}</nav>
       <div className={cn('m-3 mt-3 w-full p-0 pt-3', sidebarCollapsed && 'px-2')}><Button variant="ghost" className={cn('w-full justify-start gap-2.5 rounded-xl px-3 text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground', sidebarCollapsed && 'justify-center px-2')} onClick={signOut} title={sidebarCollapsed ? 'Sign out' : undefined}><SignOutIcon data-icon="inline-start" /><span className={sidebarCollapsed ? 'sr-only' : undefined}>Sign out</span></Button>{!sidebarCollapsed && <p className="px-3 pt-3 text-[10px] text-sidebar-foreground/40">v0.2 billing foundation</p>}</div>
 </aside>
-    <main className="min-w-0"><header className="billing-header sticky top-0 z-10 flex min-h-16 items-center justify-between px-5 backdrop-blur sm:px-8"><div className="flex items-center gap-1.5"><div className="md:hidden"><BrandMark mark={brandMark} logoUrl={brandLogo} primary={brandPrimary} /></div><Button variant="ghost" size="icon-sm" className="hidden text-muted-foreground hover:bg-muted hover:text-foreground md:inline-flex md:size-6" onClick={toggleSidebar} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><SidebarSimpleIcon weight="bold" /></Button><Separator orientation="vertical" className="hidden h-5 md:block" /><p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">ISP billing / {current?.section}</p></div><div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="rounded-xl" aria-label="Open notifications" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(true)}><BellIcon /></Button><Separator orientation="vertical" className="h-5" /><button type="button" className="billing-profile-trigger flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/70" aria-expanded={profileOpen} aria-haspopup="dialog" onClick={() => setProfileOpen(current => !current)}><Avatar size="sm"><AvatarFallback>{session.user.name.slice(0, 1).toUpperCase()}</AvatarFallback></Avatar><span className="hidden text-xs font-medium sm:block">{session.user.name}</span></button></div></header><nav className="flex gap-1 overflow-x-auto bg-sidebar p-2 text-sidebar-foreground md:hidden" aria-label="Mobile navigation">{visibleNav.map(item => <Button key={item.key} variant="ghost" className={cn('shrink-0 gap-2 rounded-xl text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground', view === item.key && 'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground')} onClick={() => selectNavItem(item)} aria-current={view === item.key ? 'page' : undefined}><NavIcon name={item.key} />{item.label}</Button>)}</nav><div className="billing-content billing-canvas mx-auto flex w-full max-w-[1680px] flex-col gap-6 px-4 pb-4 pt-0 sm:px-6 sm:pb-6 sm:pt-0">{view === 'overview' ? <DashboardPage session={session} /> : view === 'subscribers' ? <SubscribersPage session={session} /> : view === 'Users' ? <UsersPage token={session.token} permissions={session.permissions} /> : view === 'Roles' ? <RolesPage token={session.token} permissions={session.permissions} /> : view === 'Branding' ? <BrandingPage token={session.token} permissions={session.permissions} isSuperadmin={session.is_superadmin} branding={session.branding} onSaved={onBrandingSaved} /> : isModuleView(view) ? <NetworkModulePage module={view} section={current?.section} token={session.token} permissions={session.permissions} isSuperadmin={session.is_superadmin} /> : <ResourceTablePage session={session} view={view} />}</div></main>
+    <main className="min-w-0"><header className="billing-header sticky top-0 z-10 flex min-h-16 items-center justify-between px-5 backdrop-blur sm:px-8"><div className="flex items-center gap-1.5"><div className="md:hidden"><BrandMark mark={brandMark} logoUrl={brandLogo} primary={brandPrimary} /></div><Button variant="ghost" size="icon-sm" className="hidden text-muted-foreground hover:bg-muted hover:text-foreground md:inline-flex md:size-6" onClick={toggleSidebar} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><SidebarSimpleIcon weight="bold" /></Button><Separator orientation="vertical" className="hidden h-5 md:block" /><p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">ISP billing / {current?.section}</p></div><div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="rounded-xl" aria-label="Open notifications" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(true)}><BellIcon /></Button><Separator orientation="vertical" className="h-5" /><button type="button" className="billing-profile-trigger flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/70" aria-expanded={profileOpen} aria-haspopup="dialog" onClick={() => setProfileOpen(current => !current)}><Avatar size="sm"><AvatarFallback>{session.user.name.slice(0, 1).toUpperCase()}</AvatarFallback></Avatar><span className="hidden text-xs font-medium sm:block">{session.user.name}</span></button></div></header><nav className="flex gap-1 overflow-x-auto bg-sidebar p-2 text-sidebar-foreground md:hidden" aria-label="Mobile navigation">{visibleNav.map(item => <Button key={item.key} variant="ghost" className={cn('shrink-0 gap-2 rounded-xl text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground', view === item.key && 'bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground')} onClick={() => selectNavItem(item)} aria-current={view === item.key ? 'page' : undefined}><NavIcon name={item.key} />{item.label}</Button>)}</nav><div className="billing-content billing-canvas mx-auto flex w-full max-w-[1680px] flex-col gap-6 px-4 pb-4 pt-0 sm:px-6 sm:pb-6 sm:pt-0">{view === 'overview' ? <DashboardPage session={session} /> : view === 'subscribers' ? <SubscribersPage session={session} /> : view === 'Users' ? <UsersPage token={session.token} permissions={session.permissions} /> : view === 'Roles' ? <RolesPage token={session.token} permissions={session.permissions} /> : view === 'Branding' ? <BrandingPage token={session.token} permissions={session.permissions} isSuperadmin={session.is_superadmin} branding={session.branding} onSaved={onBrandingSaved} /> : view === 'Email' ? <EmailPage token={session.token} permissions={session.permissions} isSuperadmin={session.is_superadmin} /> : view === 'Notifications' ? <NotificationsPage token={session.token} permissions={session.permissions} isSuperadmin={session.is_superadmin} /> : view === 'API Tokens' ? <ApiTokensPage token={session.token} permissions={session.permissions} isSuperadmin={session.is_superadmin} /> : view === 'Paymongo' ? <PaymongoPage token={session.token} permissions={session.permissions} isSuperadmin={session.is_superadmin} /> : view === 'GCash' ? <GcashPage token={session.token} permissions={session.permissions} isSuperadmin={session.is_superadmin} /> : isModuleView(view) ? <NetworkModulePage module={view} section={current?.section} token={session.token} permissions={session.permissions} isSuperadmin={session.is_superadmin} /> : <ResourceTablePage session={session} view={view} />}</div></main>
     {notificationsOpen && <NotificationDrawer onClose={() => setNotificationsOpen(false)} />}
     {profileOpen && <ProfileDrawer name={session.user.name} email={session.user.email} onClose={() => setProfileOpen(false)} onSignOut={signOut} />}
   </div>
@@ -280,10 +303,9 @@ function NavIcon({ name }: { name: IconName }) {
   const props = { 'aria-hidden': true, size: 16, weight: 'regular' as const }
   if (name === 'overview') return <HouseIcon {...props} data-icon="inline-start" />
   if (name === 'subscribers') return <UsersThreeIcon {...props} data-icon="inline-start" />
+  if (name === 'subscriptions') return <ChartLineUpIcon {...props} data-icon="inline-start" />
   if (name === 'accounts') return <CreditCardIcon {...props} data-icon="inline-start" />
   if (name === 'plans') return <PackageIcon {...props} data-icon="inline-start" />
-  if (name === 'services') return <WifiHighIcon {...props} data-icon="inline-start" />
-  if (name === 'subscriptions') return <ChartLineUpIcon {...props} data-icon="inline-start" />
   if (name === 'invoices') return <InvoiceIcon {...props} data-icon="inline-start" />
   if (name === 'BNG') return <ShareNetworkIcon {...props} data-icon="inline-start" />
   if (name === 'ACS Server') return <CloudIcon {...props} data-icon="inline-start" />
@@ -297,6 +319,7 @@ function NavIcon({ name }: { name: IconName }) {
   if (name === 'Roles') return <UserGearIcon {...props} data-icon="inline-start" />
   if (name === 'Branding') return <PaintBrushIcon {...props} data-icon="inline-start" />
   if (name === 'API Tokens') return <KeyIcon {...props} data-icon="inline-start" />
+  if (name === 'Paymongo') return <CreditCardIcon {...props} data-icon="inline-start" />
   if (name === 'Email') return <EnvelopeSimpleIcon {...props} data-icon="inline-start" />
   if (name === 'Notifications') return <BellRingingIcon {...props} data-icon="inline-start" />
   if (name === 'Audit Logs') return <ClipboardTextIcon {...props} data-icon="inline-start" />

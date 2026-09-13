@@ -4,19 +4,22 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCustomerRequest;
+use App\Models\BillingAccount;
 use App\Models\Customer;
+use App\Models\SubscriberService;
+use App\Services\NumberGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class CustomerController extends Controller
 {
     public function store(StoreCustomerRequest $request): JsonResponse
     {
-        $organization = $request->attributes->get('organization');
         $customer = Customer::create([
             ...$request->validated(),
-            'organization_id' => $organization->id,
-            'customer_number' => $this->nextCustomerNumber($organization->id),
+            'customer_number' => $this->nextCustomerNumber(),
         ]);
 
         return response()->json(['data' => $customer->fresh(), 'correlation_id' => $request->header('X-Request-Id')], 201);
@@ -24,8 +27,7 @@ class CustomerController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $organization = $request->attributes->get('organization');
-        $query = Customer::query()->where('organization_id', $organization->id);
+        $query = Customer::with(['subscriberServices.subscriptions']);
         if ($search = $request->string('search')->toString()) {
             $query->where(function ($builder) use ($search) {
                 $builder->where('legal_name', 'like', "%{$search}%")
@@ -46,7 +48,7 @@ class CustomerController extends Controller
     {
         $customer = $this->customer($request, $publicId);
         $customer->update($request->validate([
-            'customer_type' => ['sometimes', 'string', 'in:residential,business'],
+            'customer_type' => ['sometimes', 'string', 'in:residential,business,corporate'],
             'legal_name' => ['sometimes', 'string', 'max:190'],
             'first_name' => ['nullable', 'string', 'max:100'], 'last_name' => ['nullable', 'string', 'max:100'],
             'email' => ['nullable', 'email', 'max:190'], 'phone' => ['nullable', 'string', 'max:40'],
@@ -57,18 +59,44 @@ class CustomerController extends Controller
 
     public function destroy(Request $request, string $publicId): \Illuminate\Http\Response
     {
-        $this->customer($request, $publicId)->delete();
+        $customer = $this->customer($request, $publicId);
+        if ($request->boolean('permanent')) {
+            $accountIds = $customer->billingAccounts()->pluck('id');
+            $serviceIds = $customer->subscriberServices()->pluck('id');
+            $hasBillingHistory = $accountIds->isNotEmpty() && (
+                (Schema::hasTable('billing_statements')
+                    && DB::table('billing_statements')->whereIn('billing_account_id', $accountIds)
+                        ->where(function ($query): void {
+                            $query->where('balance_due_minor', '>', 0)
+                                ->orWhereIn('status', ['pending', 'open', 'overdue']);
+                        })->exists())
+                || (Schema::hasTable('invoices')
+                    && DB::table('invoices')->whereIn('billing_account_id', $accountIds)
+                        ->where(function ($query): void {
+                            $query->where('balance_due_minor', '>', 0)
+                                ->orWhereIn('status', ['pending', 'open', 'overdue', 'draft']);
+                        })->exists())
+            );
+            $hasServiceHistory = $serviceIds->isNotEmpty() && DB::table('subscriptions')->whereIn('subscriber_service_id', $serviceIds)->exists();
+            abort_if($hasBillingHistory || $hasServiceHistory, 422, 'This subscriber cannot be permanently deleted while billing records or subscriptions reference it.');
+            DB::transaction(function () use ($customer, $accountIds, $serviceIds): void {
+                SubscriberService::whereIn('id', $serviceIds)->delete();
+                BillingAccount::whereIn('id', $accountIds)->delete();
+                $customer->forceDelete();
+            });
+        } else {
+            $customer->delete();
+        }
         return response()->noContent();
     }
 
     private function customer(Request $request, string $publicId): Customer
     {
-        return Customer::where('organization_id', $request->attributes->get('organization')->id)->where('public_id', $publicId)->firstOrFail();
+        return Customer::where('public_id', $publicId)->firstOrFail();
     }
 
-    private function nextCustomerNumber(int $organizationId): string
+    private function nextCustomerNumber(): string
     {
-        $next = Customer::withTrashed()->where('organization_id', $organizationId)->count() + 1;
-        return 'CUS-'.str_pad((string) $next, 6, '0', STR_PAD_LEFT);
+        return NumberGenerator::next('customers', 'CUS-', 'customers', 'customer_number');
     }
 }

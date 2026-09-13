@@ -9,7 +9,7 @@ class Role extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['organization_id', 'name', 'guard_name'];
+    protected $fillable = ['name', 'guard_name'];
 
     public function permissions()
     {
@@ -18,8 +18,6 @@ class Role extends Model
 
     public function users()
     {
-        return $this->belongsToMany(User::class, 'role_assignments')
-            ->withPivot('organization_id')
-            ->withTimestamps();
+        return $this->belongsToMany(User::class, 'role_assignments')->withTimestamps();
     }
 }

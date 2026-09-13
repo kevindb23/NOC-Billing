@@ -14,6 +14,7 @@
 
 - Do not edit already-applied migrations; add a forward migration.
 - The migration must fail closed when multiple organizations or conflicting flattened settings/roles exist.
+- The organization-flattening migration is intentionally irreversible and must document that its `down()` method refuses to recreate discarded ownership semantics.
 - Preserve customer, billing, invoice, payment, statement, allocation, and audit target data.
 - Never retain `organization_id` in any database table after the migration.
 - Do not add replacement tenant or organization scoping.
@@ -278,4 +279,3 @@ npm run build
 - [ ] **Step 5: Confirm no organization-owned runtime path remains**
 
 Run the API smoke checks for login, `/auth/me`, customers, billing resources, roles, settings, tokens, and GCash. Confirm the Router module is not implemented until it can be created against the global schema.
-

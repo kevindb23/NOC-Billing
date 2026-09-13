@@ -15,10 +15,9 @@ class RequirePermission
 
     public function handle(Request $request, Closure $next, string $permission): Response
     {
-        $organization = $request->attributes->get('organization');
         $user = $request->user();
 
-        if (! $organization || ! $user || ! $this->permissions->userCan($user, $organization, $permission)) {
+        if (! $user || ! $this->permissions->userCan($user, $permission)) {
             return response()->json(['message' => 'This action is unauthorized.'], 403);
         }
 

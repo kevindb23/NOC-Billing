@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreRoleRequest;
 use App\Http\Requests\UpdateRoleRequest;
-use App\Models\Organization;
 use App\Models\Role;
 use App\Services\AuditLogger;
 use Illuminate\Database\Eloquent\Builder;
@@ -21,8 +20,7 @@ class RoleController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $organization = $this->organization($request);
-        $roles = $this->rolesQuery($organization)
+        $roles = $this->rolesQuery()
             ->orderBy('name')
             ->paginate($request->integer('per_page', 20));
         $roles->through(fn (Role $role): array => $this->resource($role, false));
@@ -32,13 +30,12 @@ class RoleController extends Controller
 
     public function store(StoreRoleRequest $request): JsonResponse
     {
-        $organization = $this->organization($request);
         $validated = $request->validated();
         $permissionIds = $validated['permission_ids'] ?? [];
         unset($validated['permission_ids']);
 
-        $role = DB::transaction(function () use ($request, $organization, $validated, $permissionIds): Role {
-            $role = $organization->roles()->create($validated);
+        $role = DB::transaction(function () use ($request, $validated, $permissionIds): Role {
+            $role = Role::create($validated);
             $role->permissions()->sync($permissionIds);
             $role->load('permissions');
             $this->auditLogger->record($request, 'role.created', $role, [], $this->snapshot($role));
@@ -51,7 +48,7 @@ class RoleController extends Controller
 
     public function show(Request $request, int $id): JsonResponse
     {
-        $role = $this->rolesQuery($this->organization($request))
+        $role = $this->rolesQuery()
             ->with('permissions')
             ->findOrFail($id);
 
@@ -60,8 +57,7 @@ class RoleController extends Controller
 
     public function update(UpdateRoleRequest $request, int $id): JsonResponse
     {
-        $organization = $this->organization($request);
-        $role = $this->organizationRole($organization, $id);
+        $role = Role::findOrFail($id);
         $validated = $request->validated();
         $permissionsProvided = array_key_exists('permission_ids', $validated);
         $permissionIds = $validated['permission_ids'] ?? [];
@@ -90,10 +86,8 @@ class RoleController extends Controller
 
     public function destroy(Request $request, int $id): JsonResponse
     {
-        $organization = $this->organization($request);
-        $role = $this->organizationRole($organization, $id)->load('permissions');
+        $role = Role::findOrFail($id)->load('permissions');
         $assigned = DB::table('role_assignments')
-            ->where('organization_id', $organization->id)
             ->where('role_id', $role->id)
             ->exists();
 
@@ -108,28 +102,11 @@ class RoleController extends Controller
         return response()->json(['message' => 'Role deleted.']);
     }
 
-    private function organization(Request $request): Organization
-    {
-        return $request->attributes->get('organization');
-    }
-
-    private function organizationRole(Organization $organization, int $id): Role
-    {
-        $role = Role::findOrFail($id);
-        abort_if($role->organization_id === null, Response::HTTP_UNPROCESSABLE_ENTITY, 'Global roles cannot be mutated through an organization request.');
-        abort_unless($role->organization_id === $organization->id, Response::HTTP_NOT_FOUND);
-
-        return $role;
-    }
-
-    private function rolesQuery(Organization $organization): Builder
+    private function rolesQuery(): Builder
     {
         return Role::query()
-            ->where(function (Builder $query) use ($organization): void {
-                $query->where('organization_id', $organization->id)->orWhereNull('organization_id');
-            })
             ->withCount([
-                'users as assignment_count' => fn ($query) => $query->where('role_assignments.organization_id', $organization->id),
+                'users as assignment_count',
                 'permissions as permission_count',
             ]);
     }
@@ -139,8 +116,6 @@ class RoleController extends Controller
         $resource = [
             'id' => $role->id,
             'name' => $role->name,
-            'organization_id' => $role->organization_id,
-            'scope' => $role->organization_id === null ? 'global' : 'organization',
             'assignment_count' => $role->assignment_count ?? null,
             'permission_count' => $role->permission_count ?? null,
         ];
@@ -167,7 +142,6 @@ class RoleController extends Controller
         return [
             'id' => $role->id,
             'name' => $role->name,
-            'organization_id' => $role->organization_id,
             'permission_ids' => $role->permissions->pluck('id')->sort()->values()->all(),
         ];
     }

@@ -1,0 +1,7 @@
+<mikrotik>
+<system routerboard="true" identity="mt-edge" model="CCR2004" version="7.15" serial-number="MT123" />
+<interface name="ether1" comment="uplink" disabled="false" running="true" mtu="1500" mac-address="AA:BB:CC:DD:EE:02" speed="1Gbps" />
+<route dst-address="0.0.0.0/0" gateway="192.0.2.0" routing-table="main" distance="1" active="true" />
+<bgp peer="192.0.2.2" remote-as="65002" state="established" uptime="01:02:03" prefix-count="42" />
+<traffic interface="ether1" rx-byte="1000" tx-byte="2000" rx-packet="10" tx-packet="20" />
+</mikrotik>

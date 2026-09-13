@@ -11,12 +11,13 @@ class StoreCustomerRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'customer_type' => ['required', 'string', 'in:residential,business'],
+            'customer_type' => ['required', 'string', 'in:residential,business,corporate'],
             'legal_name' => ['required', 'string', 'max:190'],
             'first_name' => ['nullable', 'string', 'max:100'],
             'last_name' => ['nullable', 'string', 'max:100'],
             'email' => ['nullable', 'email', 'max:190'],
             'phone' => ['nullable', 'string', 'max:40'],
+            'status' => ['sometimes', 'string', 'in:active,inactive'],
             'notes' => ['nullable', 'string'],
         ];
     }

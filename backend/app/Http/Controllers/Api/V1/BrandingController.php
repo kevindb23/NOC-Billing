@@ -16,29 +16,25 @@ class BrandingController extends Controller
 
     public function show(Request $request): JsonResponse
     {
-        $organization = $request->attributes->get('organization');
-
         return response()->json(['data' => [
-            'branding' => $this->branding->resolved($organization),
-            'defaults' => $this->branding->defaults($organization),
+            'branding' => $this->branding->resolved(),
+            'defaults' => $this->branding->defaults(),
         ]]);
     }
 
     public function update(UpdateBrandingRequest $request): JsonResponse
     {
-        $organization = $request->attributes->get('organization');
-        $branding = OrganizationBranding::firstOrNew(['organization_id' => $organization->id]);
-        $oldValues = $this->branding->resolved($organization);
+        $branding = OrganizationBranding::query()->firstOrNew();
+        $oldValues = $this->branding->resolved();
         $branding->fill($request->validated());
         $branding->save();
-        $organization->unsetRelation('branding');
-        $newValues = $this->branding->resolved($organization);
+        $newValues = $this->branding->resolved();
 
         $this->auditLogger->record($request, 'branding.updated', $branding, $oldValues, $newValues);
 
         return response()->json(['data' => [
             'branding' => $newValues,
-            'defaults' => $this->branding->defaults($organization),
+            'defaults' => $this->branding->defaults(),
         ]]);
     }
 }

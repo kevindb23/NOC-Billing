@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AuditLog;
 use App\Models\Permission;
+use App\Models\Organization;
 use App\Models\Role;
 use App\Models\Router;
 use App\Models\User;
@@ -18,6 +19,13 @@ use Tests\TestCase;
 class RouterApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['auth.guards.sanctum' => ['driver' => 'session', 'provider' => 'users']]);
+        config(['app.key' => 'base64:'.base64_encode(str_repeat('x', 32))]);
+    }
 
     public function test_router_api_supports_paginated_crud_and_normalized_driver_actions(): void
     {
@@ -39,7 +47,7 @@ class RouterApiTest extends TestCase
             'software_version' => '7.15',
             'serial_number' => 'MT-123',
             'driver' => 'mikrotik_router',
-            'preferred_transport' => 'mock',
+            'preferred_transport' => 'api',
             'status' => 'active',
             'notes' => 'Core router',
             'created_by' => User::factory()->create()->id,
@@ -81,9 +89,10 @@ class RouterApiTest extends TestCase
     public function test_router_routes_require_router_permissions(): void
     {
         $actor = User::factory()->create();
-        $role = Role::create(['name' => 'Unrelated permission holder', 'guard_name' => 'api']);
+        $organization = $this->organizationFor($actor);
+        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Unrelated permission holder', 'guard_name' => 'api']);
         $role->permissions()->attach(Permission::create(['name' => 'users.view', 'guard_name' => 'api']));
-        $role->users()->attach($actor);
+        $role->users()->attach($actor, ['organization_id' => $organization->id]);
         Sanctum::actingAs($actor);
         $router = Router::create($this->routerAttributes('Protected router'));
 
@@ -122,6 +131,22 @@ class RouterApiTest extends TestCase
 
         Sanctum::actingAs($this->actorWithPermission('routers.delete'));
         $this->deleteJson('/api/v1/routers/'.$router->public_id)->assertNoContent();
+    }
+
+    public function test_router_can_be_permanently_deleted_with_the_delete_intent(): void
+    {
+        $actor = $this->actorWithRouterPermissions();
+        Sanctum::actingAs($actor);
+        $router = Router::create($this->routerAttributes('Permanent delete router'));
+
+        $this->deleteJson('/api/v1/routers/'.$router->public_id.'?permanent=1')
+            ->assertNoContent();
+
+        $this->assertDatabaseMissing('routers', ['id' => $router->id]);
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'router.deleted',
+            'auditable_id' => (string) $router->id,
+        ]);
     }
 
     public function test_router_lifecycle_and_driver_actions_write_audits_without_secrets(): void
@@ -277,7 +302,7 @@ class RouterApiTest extends TestCase
             'name' => 'Existing router',
             'vendor' => 'other',
             'driver' => 'mikrotik_router',
-            'preferred_transport' => 'mock',
+            'preferred_transport' => 'api',
             'status' => 'unknown',
         ]);
 
@@ -285,7 +310,7 @@ class RouterApiTest extends TestCase
             'name' => 'Existing router',
             'vendor' => 'other',
             'driver' => 'mikrotik_router',
-            'preferred_transport' => 'mock',
+            'preferred_transport' => 'api',
             'status' => 'unknown',
         ])->assertUnprocessable()->assertJsonValidationErrors(['name']);
 
@@ -358,7 +383,8 @@ class RouterApiTest extends TestCase
     private function actorWithRouterPermissions(): User
     {
         $actor = User::factory()->create();
-        $role = Role::create(['name' => 'Router manager', 'guard_name' => 'api']);
+        $organization = $this->organizationFor($actor);
+        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Router manager', 'guard_name' => 'api']);
         $permissions = collect([
             'routers.view',
             'routers.create',
@@ -368,7 +394,7 @@ class RouterApiTest extends TestCase
             'routers.export',
         ])->map(fn (string $name): Permission => Permission::create(['name' => $name, 'guard_name' => 'api']));
         $role->permissions()->sync($permissions->pluck('id'));
-        $role->users()->attach($actor);
+        $role->users()->attach($actor, ['organization_id' => $organization->id]);
 
         return $actor;
     }
@@ -376,10 +402,11 @@ class RouterApiTest extends TestCase
     private function actorWithPermission(string $permissionName): User
     {
         $actor = User::factory()->create();
-        $role = Role::create(['name' => 'Router '.$permissionName.' holder '.$actor->id, 'guard_name' => 'api']);
+        $organization = $this->organizationFor($actor);
+        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Router '.$permissionName.' holder '.$actor->id, 'guard_name' => 'api']);
         $permission = Permission::firstOrCreate(['name' => $permissionName], ['guard_name' => 'api']);
         $role->permissions()->attach($permission);
-        $role->users()->attach($actor);
+        $role->users()->attach($actor, ['organization_id' => $organization->id]);
 
         return $actor;
     }
@@ -391,9 +418,23 @@ class RouterApiTest extends TestCase
             'name' => $name,
             'vendor' => 'mikrotik',
             'driver' => 'mikrotik_router',
-            'preferred_transport' => 'mock',
+            'preferred_transport' => 'api',
             'status' => 'unknown',
         ];
+    }
+
+    private function organizationFor(User $actor): Organization
+    {
+        $organization = Organization::create([
+            'name' => 'Router test organization '.$actor->id,
+            'slug' => 'router-test-'.$actor->id,
+            'status' => 'active',
+            'timezone' => 'UTC',
+            'default_currency' => 'PHP',
+        ]);
+        $organization->users()->attach($actor, ['is_default' => true, 'status' => 'active']);
+
+        return $organization;
     }
 
     public function test_router_persistence_contract_is_installation_wide_and_relational(): void

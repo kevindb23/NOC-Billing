@@ -11,7 +11,6 @@ class AuditLogger
     public function record(Request $request, string $action, ?Model $auditable = null, array $oldValues = [], array $newValues = []): AuditLog
     {
         return AuditLog::create([
-            'organization_id' => $request->attributes->get('organization')?->id,
             'actor_user_id' => $request->user()?->getAuthIdentifier(),
             'action' => $action,
             'auditable_type' => $auditable ? $auditable->getMorphClass() : 'system',

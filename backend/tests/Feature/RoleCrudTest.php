@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\AuditLog;
-use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -16,206 +15,146 @@ class RoleCrudTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_role_list_is_isolated_and_includes_assignment_and_permission_counts(): void
+    public function test_role_list_is_installation_wide_and_includes_counts(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('roles.view');
-        $visible = Role::create(['organization_id' => $organization->id, 'name' => 'Visible']);
-        $otherOrganization = Organization::factory()->create();
-        Role::create(['organization_id' => $otherOrganization->id, 'name' => 'Hidden']);
-        $permission = Permission::create(['name' => 'billing.view']);
-        $visible->permissions()->attach($permission);
+        [$actor] = $this->actorWithPermission('roles.view');
+        $visible = Role::create(['name' => 'Visible']);
+        Role::create(['name' => 'Other role']);
+        $visible->permissions()->attach(Permission::create(['name' => 'billing.view']));
         $assigned = User::factory()->create();
-        $organization->users()->attach($assigned, ['status' => 'active']);
-        $visible->users()->attach($assigned, ['organization_id' => $organization->id]);
+        $visible->users()->attach($assigned);
         Sanctum::actingAs($actor);
 
-        $response = $this->organizationRequest($organization)->getJson('/api/v1/roles');
+        $response = $this->getJson('/api/v1/roles');
 
-        $response->assertOk()
-            ->assertJsonFragment(['name' => 'Visible', 'assignment_count' => 1, 'permission_count' => 1]);
-        $this->assertNotContains('Hidden', collect($response->json('data'))->pluck('name')->all());
+        $response->assertOk()->assertJsonFragment(['name' => 'Visible', 'assignment_count' => 1, 'permission_count' => 1]);
+        $this->assertCount(3, $response->json('data.data'));
     }
 
-    public function test_role_list_is_paginated_and_includes_organization_and_global_scopes(): void
+    public function test_role_list_is_paginated_without_scope_fields(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('roles.view');
-        $organizationRole = Role::create(['organization_id' => $organization->id, 'name' => 'Organization role']);
-        $globalRole = Role::create(['organization_id' => null, 'name' => 'Global role']);
-        $globalRole->users()->attach($actor, ['organization_id' => $organization->id]);
+        [$actor] = $this->actorWithPermission('roles.view');
+        Role::create(['name' => 'Installation role']);
         Sanctum::actingAs($actor);
 
-        $response = $this->organizationRequest($organization)->getJson('/api/v1/roles?per_page=2');
+        $response = $this->getJson('/api/v1/roles?per_page=2');
 
-        $response->assertOk()
-            ->assertJsonPath('data.current_page', 1)
-            ->assertJsonPath('data.per_page', 2)
-            ->assertJsonPath('data.total', 3);
-        $roles = collect($response->json('data.data'))->keyBy('name');
-        $this->assertSame('organization', $roles->get('Organization role')['scope']);
-        $this->assertSame('global', $roles->get('Global role')['scope']);
-        $this->assertSame(1, $roles->get('Global role')['assignment_count']);
-        $this->assertSame(0, $roles->get('Global role')['permission_count']);
-        $this->assertNotNull($organizationRole->id);
+        $response->assertOk()->assertJsonPath('data.current_page', 1)->assertJsonPath('data.per_page', 2);
+        foreach ($response->json('data.data') as $role) {
+            $this->assertArrayNotHasKey('scope', $role);
+            $this->assertArrayNotHasKey('organization_id', $role);
+        }
     }
 
     public function test_role_can_be_created_with_permissions_transactionally_and_audited(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('roles.create');
+        [$actor] = $this->actorWithPermission('roles.create');
         $permission = Permission::create(['name' => 'billing.view']);
         Sanctum::actingAs($actor);
 
-        $response = $this->organizationRequest($organization)->postJson('/api/v1/roles', [
-            'name' => 'Billing clerk',
-            'permission_ids' => [$permission->id],
-        ]);
+        $response = $this->postJson('/api/v1/roles', ['name' => 'Billing clerk', 'permission_ids' => [$permission->id]]);
 
-        $role = Role::where('organization_id', $organization->id)->where('name', 'Billing clerk')->firstOrFail();
+        $role = Role::where('name', 'Billing clerk')->firstOrFail();
         $response->assertCreated()->assertJsonPath('data.id', $role->id)->assertJsonPath('data.permission_ids.0', $permission->id);
         $this->assertDatabaseHas('role_permissions', ['role_id' => $role->id, 'permission_id' => $permission->id]);
         $this->assertAuditActions(['role.created'], $role);
-        $this->assertAuditSecretsAbsent($role);
     }
 
     public function test_role_details_return_grouped_permission_ids(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('roles.view');
-        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Support']);
+        [$actor] = $this->actorWithPermission('roles.view');
+        $role = Role::create(['name' => 'Support']);
         $first = Permission::create(['name' => 'billing.view']);
         $second = Permission::create(['name' => 'users.view']);
         $role->permissions()->attach([$first->id, $second->id]);
         Sanctum::actingAs($actor);
 
-        $this->organizationRequest($organization)->getJson('/api/v1/roles/'.$role->id)
-            ->assertOk()
+        $this->getJson('/api/v1/roles/'.$role->id)->assertOk()
             ->assertJsonPath('data.permission_ids', [$first->id, $second->id])
             ->assertJsonPath('data.permissions.Billing', [$first->id])
             ->assertJsonPath('data.permissions.System', [$second->id]);
     }
 
-    public function test_role_update_synchronizes_permissions_and_audits_profile_and_permission_changes(): void
+    public function test_role_update_synchronizes_permissions_and_audits_changes(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('roles.update');
-        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Before']);
-        $oldPermission = Permission::create(['name' => 'billing.view']);
-        $newPermission = Permission::create(['name' => 'billing.update']);
-        $role->permissions()->attach($oldPermission);
+        [$actor] = $this->actorWithPermission('roles.update');
+        $role = Role::create(['name' => 'Before']);
+        $old = Permission::create(['name' => 'billing.view']);
+        $new = Permission::create(['name' => 'billing.update']);
+        $role->permissions()->attach($old);
         Sanctum::actingAs($actor);
 
-        $response = $this->organizationRequest($organization)->putJson('/api/v1/roles/'.$role->id, [
-            'name' => 'After',
-            'permission_ids' => [$newPermission->id],
-        ]);
+        $this->putJson('/api/v1/roles/'.$role->id, ['name' => 'After', 'permission_ids' => [$new->id]])->assertOk();
 
-        $response->assertOk()->assertJsonPath('data.name', 'After')->assertJsonPath('data.permission_ids', [$newPermission->id]);
-        $this->assertDatabaseMissing('role_permissions', ['role_id' => $role->id, 'permission_id' => $oldPermission->id]);
-        $this->assertDatabaseHas('role_permissions', ['role_id' => $role->id, 'permission_id' => $newPermission->id]);
+        $this->assertDatabaseMissing('role_permissions', ['role_id' => $role->id, 'permission_id' => $old->id]);
+        $this->assertDatabaseHas('role_permissions', ['role_id' => $role->id, 'permission_id' => $new->id]);
         $this->assertAuditActions(['role.updated', 'role.permissions_updated'], $role);
     }
 
-    public function test_duplicate_role_names_are_rejected_within_an_organization(): void
+    public function test_duplicate_role_names_are_rejected_globally(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('roles.create');
-        Role::create(['organization_id' => $organization->id, 'name' => 'Duplicate']);
+        [$actor] = $this->actorWithPermission('roles.create');
+        Role::create(['name' => 'Duplicate']);
         Sanctum::actingAs($actor);
 
-        $this->organizationRequest($organization)->postJson('/api/v1/roles', ['name' => 'Duplicate', 'permission_ids' => []])
-            ->assertUnprocessable()->assertJsonValidationErrors(['name']);
+        $this->postJson('/api/v1/roles', ['name' => 'Duplicate', 'permission_ids' => []])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['name']);
     }
 
     public function test_assigned_role_cannot_be_deleted(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('roles.delete');
-        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Assigned']);
-        $assigned = User::factory()->create();
-        $organization->users()->attach($assigned, ['status' => 'active']);
-        $role->users()->attach($assigned, ['organization_id' => $organization->id]);
+        [$actor] = $this->actorWithPermission('roles.delete');
+        $role = Role::create(['name' => 'Assigned']);
+        $role->users()->attach(User::factory()->create());
         Sanctum::actingAs($actor);
 
-        $this->organizationRequest($organization)->deleteJson('/api/v1/roles/'.$role->id)
-            ->assertStatus(409);
+        $this->deleteJson('/api/v1/roles/'.$role->id)->assertStatus(409);
         $this->assertDatabaseHas('roles', ['id' => $role->id]);
-    }
-
-    public function test_global_roles_cannot_be_mutated_through_organization_requests(): void
-    {
-        [$actor, $organization] = $this->actorWithPermission('roles.update');
-        $global = Role::create(['organization_id' => null, 'name' => 'Global']);
-        Sanctum::actingAs($actor);
-
-        $this->organizationRequest($organization)->putJson('/api/v1/roles/'.$global->id, ['name' => 'Changed', 'permission_ids' => []])
-            ->assertStatus(422);
-        $this->assertDatabaseHas('roles', ['id' => $global->id, 'name' => 'Global']);
-    }
-
-    public function test_foreign_role_detail_and_mutation_are_not_found(): void
-    {
-        [$actor, $organization] = $this->actorWithPermissions(['roles.view', 'roles.update']);
-        $otherOrganization = Organization::factory()->create();
-        $foreign = Role::create(['organization_id' => $otherOrganization->id, 'name' => 'Foreign']);
-        Sanctum::actingAs($actor);
-
-        $this->organizationRequest($organization)->getJson('/api/v1/roles/'.$foreign->id)->assertNotFound();
-        $this->organizationRequest($organization)->putJson('/api/v1/roles/'.$foreign->id, ['name' => 'Changed'])
-            ->assertNotFound();
-        $this->assertDatabaseHas('roles', ['id' => $foreign->id, 'name' => 'Foreign']);
-    }
-
-    public function test_global_roles_cannot_be_deleted_through_an_organization_request(): void
-    {
-        [$actor, $organization] = $this->actorWithPermission('roles.delete');
-        $global = Role::create(['organization_id' => null, 'name' => 'Global']);
-        Sanctum::actingAs($actor);
-
-        $this->organizationRequest($organization)->deleteJson('/api/v1/roles/'.$global->id)
-            ->assertStatus(422);
-        $this->assertDatabaseHas('roles', ['id' => $global->id, 'name' => 'Global']);
     }
 
     public function test_role_creation_rolls_back_when_permission_sync_fails(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('roles.create');
+        [$actor] = $this->actorWithPermission('roles.create');
         $permission = Permission::create(['name' => 'billing.view']);
         DB::statement("CREATE TRIGGER fail_role_permission_insert BEFORE INSERT ON role_permissions BEGIN SELECT RAISE(ABORT, 'forced permission sync failure'); END");
         Sanctum::actingAs($actor);
 
         try {
-            $this->organizationRequest($organization)->postJson('/api/v1/roles', [
-                'name' => 'Rolled back',
-                'permission_ids' => [$permission->id],
-            ])->assertServerError();
+            $this->postJson('/api/v1/roles', ['name' => 'Rolled back', 'permission_ids' => [$permission->id]])->assertServerError();
         } finally {
             DB::statement('DROP TRIGGER fail_role_permission_insert');
         }
 
-        $this->assertDatabaseMissing('roles', ['organization_id' => $organization->id, 'name' => 'Rolled back']);
+        $this->assertDatabaseMissing('roles', ['name' => 'Rolled back']);
         $this->assertDatabaseMissing('audit_logs', ['action' => 'role.created']);
     }
 
     public function test_role_crud_requires_the_matching_permission(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('users.view');
+        [$actor] = $this->actorWithPermission('users.view');
         Sanctum::actingAs($actor);
 
-        $this->organizationRequest($organization)->getJson('/api/v1/roles')->assertForbidden();
+        $this->getJson('/api/v1/roles')->assertForbidden();
     }
 
     public function test_invalid_permission_ids_are_rejected(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('roles.create');
+        [$actor] = $this->actorWithPermission('roles.create');
         Sanctum::actingAs($actor);
 
-        $this->organizationRequest($organization)->postJson('/api/v1/roles', ['name' => 'Invalid', 'permission_ids' => [999999]])
+        $this->postJson('/api/v1/roles', ['name' => 'Invalid', 'permission_ids' => [999999]])
             ->assertUnprocessable()->assertJsonValidationErrors(['permission_ids.0']);
-        $this->assertDatabaseMissing('roles', ['organization_id' => $organization->id, 'name' => 'Invalid']);
+        $this->assertDatabaseMissing('roles', ['name' => 'Invalid']);
     }
 
-    public function test_role_deletion_is_audited(): void
+    public function test_installation_role_can_be_deleted_and_is_audited(): void
     {
-        [$actor, $organization] = $this->actorWithPermission('roles.delete');
-        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Removable']);
+        [$actor] = $this->actorWithPermission('roles.delete');
+        $role = Role::create(['name' => 'Removable']);
         Sanctum::actingAs($actor);
 
-        $this->organizationRequest($organization)->deleteJson('/api/v1/roles/'.$role->id)->assertOk();
+        $this->deleteJson('/api/v1/roles/'.$role->id)->assertOk();
 
         $this->assertDatabaseMissing('roles', ['id' => $role->id]);
         $this->assertAuditActions(['role.deleted'], $role);
@@ -223,39 +162,16 @@ class RoleCrudTest extends TestCase
 
     private function actorWithPermission(string $permissionName): array
     {
-        return $this->actorWithPermissions([$permissionName]);
-    }
-
-    private function actorWithPermissions(array $permissionNames): array
-    {
-        $organization = Organization::factory()->create();
         $actor = User::factory()->create();
-        $role = Role::create(['organization_id' => $organization->id, 'name' => 'Permission holder']);
-        $organization->users()->attach($actor, ['is_default' => true, 'status' => 'active']);
-        foreach ($permissionNames as $permissionName) {
-            $role->permissions()->attach(Permission::create(['name' => $permissionName]));
-        }
-        $role->users()->attach($actor, ['organization_id' => $organization->id]);
+        $role = Role::create(['name' => 'Permission holder']);
+        $role->permissions()->attach(Permission::create(['name' => $permissionName]));
+        $role->users()->attach($actor);
 
-        return [$actor, $organization];
-    }
-
-    private function organizationRequest(Organization $organization)
-    {
-        return $this->withHeader('X-Organization-Id', $organization->public_id);
+        return [$actor];
     }
 
     private function assertAuditActions(array $actions, Role $role): void
     {
         $this->assertSame($actions, AuditLog::where('auditable_id', $role->id)->orderBy('id')->pluck('action')->all());
-    }
-
-    private function assertAuditSecretsAbsent(Role $role): void
-    {
-        $logs = AuditLog::where('auditable_id', $role->id)->get();
-        foreach ($logs as $log) {
-            $this->assertArrayNotHasKey('password', $log->old_values ?? []);
-            $this->assertArrayNotHasKey('token', $log->new_values ?? []);
-        }
     }
 }

@@ -18,4 +18,7 @@ class Organization extends Model
     public function billingAccounts() { return $this->hasMany(BillingAccount::class); }
     public function plans() { return $this->hasMany(Plan::class); }
     public function branding() { return $this->hasOne(OrganizationBranding::class); }
+    public function emailSettings() { return $this->hasMany(OrganizationEmailSetting::class); }
+    public function notificationSettings() { return $this->hasMany(OrganizationNotificationSetting::class); }
+    public function paymongoSettings() { return $this->hasMany(OrganizationPaymongoSetting::class); }
 }

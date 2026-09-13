@@ -76,7 +76,7 @@ describe('users and roles administration', () => {
   it('hydrates the user edit form whenever the record changes', () => {
     const user = { public_id: 'usr_1', name: 'Ada', email: 'ada@example.com', status: 'active', membership_status: 'active', membership_is_default: false, roles: [{ id: 1, name: 'Admin' }] }
     const nextUser = { ...user, public_id: 'usr_2', name: 'Grace', email: 'grace@example.com', membership_status: 'inactive', roles: [] }
-    const view = render(<UserForm open mode="edit" user={user} roles={[{ id: 1, name: 'Admin', organization_id: 1, scope: 'organization', assignment_count: 0, permission_count: 0 }]} onClose={vi.fn()} onSubmit={vi.fn()} />)
+    const view = render(<UserForm open mode="edit" user={user} roles={[{ id: 1, name: 'Admin', assignment_count: 0, permission_count: 0 }]} onClose={vi.fn()} onSubmit={vi.fn()} />)
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Ada')
     view.rerender(<UserForm open mode="edit" user={nextUser} roles={[]} onClose={vi.fn()} onSubmit={vi.fn()} />)
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Grace')
@@ -84,7 +84,7 @@ describe('users and roles administration', () => {
   })
 
   it('hydrates the role edit form whenever the record changes and keeps global roles read-only', () => {
-    const role = { id: 1, name: 'Support', organization_id: 1, scope: 'organization' as const, assignment_count: 0, permission_count: 1, permission_ids: [7] }
+    const role = { id: 1, name: 'Support', assignment_count: 0, permission_count: 1, permission_ids: [7] }
     const nextRole = { ...role, id: 2, name: 'Billing', permission_ids: [] }
     const groups = [{ group: 'System', permissions: [{ id: 7, name: 'users.view', action: 'view' }] }]
     const view = render(<RoleForm open mode="edit" role={role} groups={groups} onClose={vi.fn()} onSubmit={vi.fn()} />)
@@ -157,13 +157,13 @@ describe('users and roles administration', () => {
     expect(screen.getByLabelText('Role name')).toBeTruthy()
   })
 
-  it('does not expose edit for global roles', async () => {
-    mockedUsers.listRoles.mockResolvedValue({ data: { data: [{ id: 1, name: 'Global admin', organization_id: null, scope: 'global', assignment_count: 0, permission_count: 1 }], current_page: 1, last_page: 1, total: 1 } })
+  it('exposes CRUD actions for installation roles', async () => {
+    mockedUsers.listRoles.mockResolvedValue({ data: { data: [{ id: 1, name: 'Installation admin', assignment_count: 0, permission_count: 1 }], current_page: 1, last_page: 1, total: 1 } })
     mockedUsers.listPermissions.mockResolvedValue({ data: [] })
     render(<RolesPage token="token" permissions={['roles.view', 'roles.update', 'roles.delete']} />)
-    expect(await screen.findByText('Global admin')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Edit Global admin' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Delete Global admin' })).toBeNull()
+    expect(await screen.findByText('Installation admin')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Edit Installation admin' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Delete Installation admin' })).toBeTruthy()
   })
 
   it('hides administration navigation and actions without permissions', async () => {

@@ -1,4 +1,4 @@
-export const views = ['overview', 'subscribers', 'accounts', 'plans', 'services', 'subscriptions', 'invoices', 'payments'] as const
+export const views = ['overview', 'subscribers', 'subscriptions', 'accounts', 'billing-statements', 'plans', 'invoices', 'payments'] as const
 export type View = typeof views[number]
 
 export function readStoredView(): View {

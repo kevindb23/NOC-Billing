@@ -39,7 +39,7 @@ Do not edit already-applied migrations. Add a new migration that:
 4. Removes `organization_user` and `organizations` after dependent references are gone.
 5. Adds global unique constraints where the previous uniqueness was scoped by organization.
 
-The migration must fail before destructive schema changes if multiple organizations or conflicting records are detected. Its `down()` path restores the schema shape and recreates a single installation organization record, but cannot reconstruct discarded multi-organization ownership semantics; this limitation must be documented in the migration.
+The migration must fail before destructive schema changes if multiple organizations or conflicting records are detected. Because organization ownership is intentionally discarded, the migration is documented as irreversible: its `down()` method must fail with an explicit message instead of pretending it can restore lost ownership semantics.
 
 ### Application layer
 

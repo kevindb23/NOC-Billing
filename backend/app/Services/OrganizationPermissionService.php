@@ -2,36 +2,28 @@
 
 namespace App\Services;
 
-use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\User;
 use Illuminate\Support\Collection;
 
 class OrganizationPermissionService
 {
-    public function userCan(User $user, Organization $organization, string $permission): bool
+    public function userCan(User $user, string $permission): bool
     {
-        if ($this->isSuperAdmin($user, $organization)) {
+        if ($this->isSuperAdmin($user)) {
             return true;
         }
 
-        return $this->permissionsFor($user, $organization)->contains('name', $permission);
+        return $this->permissionsFor($user)->contains('name', $permission);
     }
 
-    public function permissionsFor(User $user, Organization $organization): Collection
+    public function permissionsFor(User $user): Collection
     {
-        if (! $user->organizations()
-            ->whereKey($organization->getKey())
-            ->wherePivot('status', 'active')
-            ->exists()) {
-            return collect();
-        }
-
-        if ($this->isSuperAdmin($user, $organization)) {
+        if ($this->isSuperAdmin($user)) {
             return Permission::query()->get();
         }
 
-        return $user->rolesForOrganization($organization)
+        return $user->roles()
             ->with('permissions')
             ->get()
             ->flatMap(fn ($role) => $role->permissions)
@@ -39,16 +31,9 @@ class OrganizationPermissionService
             ->values();
     }
 
-    public function isSuperAdmin(User $user, Organization $organization): bool
+    public function isSuperAdmin(User $user): bool
     {
-        if (! $user->organizations()
-            ->whereKey($organization->getKey())
-            ->wherePivot('status', 'active')
-            ->exists()) {
-            return false;
-        }
-
-        return $user->rolesForOrganization($organization)
+        return $user->roles()
             ->whereRaw("lower(trim(roles.name)) in ('admin', 'administrator', 'superadmin', 'super admin', 'super administrator')")
             ->exists();
     }

@@ -11,8 +11,7 @@ class Customer extends Model
 {
     use HasFactory, HasPublicId, SoftDeletes;
 
-    protected $fillable = ['organization_id', 'customer_number', 'customer_type', 'legal_name', 'first_name', 'last_name', 'email', 'phone', 'status', 'notes'];
-    public function organization() { return $this->belongsTo(Organization::class); }
+    protected $fillable = ['customer_number', 'customer_type', 'legal_name', 'first_name', 'last_name', 'email', 'phone', 'status', 'notes'];
     public function billingAccounts() { return $this->hasMany(BillingAccount::class); }
     public function subscriberServices() { return $this->hasMany(SubscriberService::class); }
 }

@@ -22,8 +22,6 @@ export type User = {
 export type Role = {
   id: number
   name: string
-  organization_id: number | null
-  scope: 'global' | 'organization'
   assignment_count: number | null
   permission_count: number | null
   permission_ids?: number[]

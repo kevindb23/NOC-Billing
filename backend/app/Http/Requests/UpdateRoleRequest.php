@@ -14,7 +14,6 @@ class UpdateRoleRequest extends FormRequest
 
     public function rules(): array
     {
-        $organization = $this->attributes->get('organization');
         $roleId = $this->route('id');
 
         return [
@@ -22,9 +21,7 @@ class UpdateRoleRequest extends FormRequest
                 'sometimes',
                 'string',
                 'max:190',
-                Rule::unique('roles', 'name')
-                    ->where(fn ($query) => $query->where('organization_id', $organization?->id))
-                    ->ignore($roleId),
+                Rule::unique('roles', 'name')->ignore($roleId),
             ],
             'permission_ids' => ['sometimes', 'array'],
             'permission_ids.*' => ['integer', 'distinct', 'exists:permissions,id'],

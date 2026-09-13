@@ -10,7 +10,6 @@ class OrganizationBranding extends Model
     use HasFactory;
 
     protected $fillable = [
-        'organization_id',
         'organization_name',
         'short_name',
         'brand_mark',
@@ -20,8 +19,4 @@ class OrganizationBranding extends Model
         'accent_color',
     ];
 
-    public function organization()
-    {
-        return $this->belongsTo(Organization::class);
-    }
 }

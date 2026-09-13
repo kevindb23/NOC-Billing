@@ -1,24 +1,33 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuditLogController;
+use App\Http\Controllers\Api\V1\ApiDocumentationController;
+use App\Http\Controllers\Api\V1\ApiTokenController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BrandingController;
 use App\Http\Controllers\Api\V1\BillingController;
 use App\Http\Controllers\Api\V1\CustomerController;
+use App\Http\Controllers\Api\V1\EmailController;
+use App\Http\Controllers\Api\V1\NotificationController;
+use App\Http\Controllers\Api\V1\PaymongoController;
+use App\Http\Controllers\Api\V1\GcashController;
 use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\RouterController;
 use App\Http\Controllers\Api\V1\UserController;
-use App\Http\Middleware\ResolveOrganization;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1/auth')->group(function (): void {
     Route::post('login', [AuthController::class, 'login']);
 });
 
-Route::prefix('v1')->middleware(['auth:sanctum', ResolveOrganization::class])->group(function (): void {
+Route::prefix('v1')->middleware(['auth:sanctum'])->group(function (): void {
     Route::get('auth/me', [AuthController::class, 'me']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
+    Route::get('docs', [ApiDocumentationController::class, 'index']);
+    Route::get('api-tokens', [ApiTokenController::class, 'index'])->middleware('permission:api-tokens.view');
+    Route::post('api-tokens', [ApiTokenController::class, 'store'])->middleware('permission:api-tokens.create');
+    Route::delete('api-tokens/{id}', [ApiTokenController::class, 'destroy'])->middleware('permission:api-tokens.delete');
     Route::get('permissions', [PermissionController::class, 'index'])->middleware('permission:roles.view');
     Route::get('roles', [RoleController::class, 'index'])->middleware('permission:roles.view');
     Route::post('roles', [RoleController::class, 'store'])->middleware('permission:roles.create');
@@ -28,6 +37,24 @@ Route::prefix('v1')->middleware(['auth:sanctum', ResolveOrganization::class])->g
     Route::get('audit-logs', [AuditLogController::class, 'index']);
     Route::get('branding', [BrandingController::class, 'show'])->middleware('permission:branding.view');
     Route::put('branding', [BrandingController::class, 'update'])->middleware('permission:branding.update');
+    Route::get('email', [EmailController::class, 'show'])->middleware('permission:email.view');
+    Route::put('email', [EmailController::class, 'update'])->middleware('permission:email.update');
+    Route::post('email/test', [EmailController::class, 'test'])->middleware('permission:email.test');
+    Route::get('notifications', [NotificationController::class, 'show'])->middleware('permission:notifications.view');
+    Route::put('notifications', [NotificationController::class, 'update'])->middleware('permission:notifications.update');
+    Route::post('notifications/test', [NotificationController::class, 'test'])->middleware('permission:notifications.test');
+    Route::get('paymongo', [PaymongoController::class, 'show'])->middleware('permission:paymongo.view');
+    Route::put('paymongo', [PaymongoController::class, 'update'])->middleware('permission:paymongo.update');
+    Route::post('paymongo/test', [PaymongoController::class, 'test'])->middleware('permission:paymongo.test');
+    Route::post('paymongo/test-payment', [PaymongoController::class, 'testPayment'])->middleware('permission:paymongo.test');
+    Route::get('gcash', [GcashController::class, 'show'])->middleware('permission:gcash.view');
+    Route::put('gcash', [GcashController::class, 'update'])->middleware('permission:gcash.update');
+    Route::get('gcash/payments', [GcashController::class, 'payments'])->middleware('permission:gcash.view');
+    Route::get('gcash/invoices', [GcashController::class, 'invoices'])->middleware('permission:gcash.view');
+    Route::get('gcash/statements', [GcashController::class, 'statements'])->middleware('permission:gcash.view');
+    Route::post('gcash/payments', [GcashController::class, 'store'])->middleware('permission:gcash.create');
+    Route::post('gcash/payments/{id}/review', [GcashController::class, 'review'])->middleware('permission:gcash.review');
+    Route::get('gcash/payments/{id}/receipt', [GcashController::class, 'receipt'])->middleware('permission:gcash.view');
     Route::get('users', [UserController::class, 'index'])->middleware('permission:users.view');
     Route::post('users', [UserController::class, 'store'])->middleware('permission:users.create');
     Route::get('users/{publicId}', [UserController::class, 'show'])->middleware('permission:users.view');
@@ -59,6 +86,8 @@ Route::prefix('v1')->middleware(['auth:sanctum', ResolveOrganization::class])->g
     Route::get('routers', [RouterController::class, 'index'])->middleware('permission:routers.view');
     Route::post('routers', [RouterController::class, 'store'])->middleware('permission:routers.create');
     Route::get('routers/{publicId}', [RouterController::class, 'show'])->middleware('permission:routers.view');
+    Route::get('routers/{publicId}/credentials', [RouterController::class, 'credentials'])->middleware('router.credential.permission:view');
+    Route::put('routers/{publicId}/credentials', [RouterController::class, 'updateCredentials'])->middleware('router.credential.permission:manage');
     Route::put('routers/{publicId}', [RouterController::class, 'update'])->middleware('permission:routers.update');
     Route::delete('routers/{publicId}', [RouterController::class, 'destroy'])->middleware('permission:routers.delete');
     Route::post('routers/{publicId}/connection-test', [RouterController::class, 'connectionTest'])->middleware('permission:routers.test');
@@ -67,4 +96,10 @@ Route::prefix('v1')->middleware(['auth:sanctum', ResolveOrganization::class])->g
     Route::post('invoices', [BillingController::class, 'storeInvoice'])->middleware('api.ability:invoices.create');
     Route::get('payments', [BillingController::class, 'payments'])->middleware('api.ability:payments.view');
     Route::post('payments', [BillingController::class, 'storePayment'])->middleware('api.ability:payments.create');
+});
+
+Route::prefix('v1')->middleware(['auth:sanctum'])->group(function (): void {
+    Route::post('routers/{publicId}/operations', [RouterController::class, 'storeOperation'])->middleware('router.operation.permission');
+    Route::get('routers/{publicId}/operations', [RouterController::class, 'operations'])->middleware('router.operation.permission:history');
+    Route::get('routers/{publicId}/operations/{operationPublicId}', [RouterController::class, 'showOperation'])->middleware('router.operation.permission:history');
 });

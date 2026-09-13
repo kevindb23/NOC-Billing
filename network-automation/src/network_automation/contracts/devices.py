@@ -6,7 +6,9 @@ being excluded from every Pydantic serialization path.
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, SecretStr, field_validator
+
+from network_automation.security.redaction import reject_sensitive_keys
 
 
 TransportName = Literal["api", "ssh", "netconf", "snmp"]
@@ -25,6 +27,11 @@ class DeviceTarget(BaseModel):
     vendor: str | None = Field(default=None, min_length=1, max_length=100)
     model: str | None = Field(default=None, min_length=1, max_length=150)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def reject_sensitive_metadata(cls, value: Any) -> Any:
+        return reject_sensitive_keys(value)
 
 
 class DeviceCredentials(BaseModel):

@@ -10,6 +10,7 @@ requires-python = ">=3.10,<3.13"
 dependencies = [
     "fastapi>=0.115,<1.0",
     "pydantic>=2.7,<3.0",
+    "typing-extensions>=4.8,<5.0",
 ]
 
 [project.optional-dependencies]

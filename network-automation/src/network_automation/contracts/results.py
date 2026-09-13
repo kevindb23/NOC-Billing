@@ -8,7 +8,7 @@ from typing_extensions import Annotated
 
 from .devices import TransportName
 from .operations import CorrelationId, OperationName
-from network_automation.security.redaction import redact
+from network_automation.security.redaction import redact, redact_exception_message
 
 
 NormalizedStatus = Literal["connected", "not_configured", "unsupported", "failed"]
@@ -28,6 +28,13 @@ class OperationResult(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     checked_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     details: dict[str, Any] | None = None
+
+    @field_validator("message", mode="before")
+    @classmethod
+    def redact_message(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return redact_exception_message(value)
+        return value
 
     @field_validator("details", mode="before")
     @classmethod

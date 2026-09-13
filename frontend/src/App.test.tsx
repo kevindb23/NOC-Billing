@@ -9,6 +9,7 @@ vi.mock('./lib/api', () => ({ apiRequest: vi.fn() }))
 vi.mock('./components/DashboardPage', () => ({ DashboardPage: () => <h1>Overview page</h1> }))
 vi.mock('./components/UsersPage', () => ({ UsersPage: () => <h1>Users page</h1> }))
 vi.mock('./components/RolesPage', () => ({ RolesPage: () => <h1>Roles page</h1> }))
+vi.mock('./components/NetworkModulePage', () => ({ NetworkModulePage: ({ module, token, permissions, isSuperadmin }: { module: string; token?: string; permissions?: string[]; isSuperadmin?: boolean }) => <div><h1>{module} page</h1><output data-testid="network-module-props">{JSON.stringify({ module, token, permissions, isSuperadmin })}</output></div> }))
 
 describe('billing application entry point', () => {
   beforeEach(() => {
@@ -93,5 +94,24 @@ describe('billing application entry point', () => {
 
     expect(await screen.findAllByRole('button', { name: 'Users' })).not.toHaveLength(0)
     expect(await screen.findAllByRole('button', { name: 'Roles' })).not.toHaveLength(0)
+  })
+
+  it('guards a persisted Routers view and passes the session props into the network module', async () => {
+    localStorage.setItem('isp-view', 'Routers')
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'viewer-token', user: { name: 'Viewer', email: 'viewer@example.com' }, permissions: [], is_superadmin: false }))
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { permissions: [], is_superadmin: false } })
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Overview page' })).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'Routers' })).toBeNull()
+
+    cleanup()
+    localStorage.setItem('isp-view', 'Routers')
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'router-token', user: { name: 'Viewer', email: 'viewer@example.com' }, permissions: ['routers.view'], is_superadmin: false }))
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { permissions: ['routers.view'], is_superadmin: false } })
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Routers page' })).toBeTruthy()
+    expect(screen.getByTestId('network-module-props').textContent).toContain('router-token')
+    expect(screen.getByTestId('network-module-props').textContent).toContain('routers.view')
+    expect(screen.getByTestId('network-module-props').textContent).toContain('false')
   })
 })

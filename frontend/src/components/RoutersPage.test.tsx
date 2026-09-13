@@ -11,7 +11,13 @@ const router = {
   public_id: '01router', name: 'Edge 01', hostname: 'edge.example.net', management_ip: '192.0.2.1',
   vendor: 'mikrotik', model: 'CCR2004', software_version: '7.15', serial_number: 'SN-1',
   driver: 'mikrotik_router', preferred_transport: 'api', status: 'active', last_contact_at: null,
-  last_synchronized_at: '2026-09-13T10:00:00Z', capabilities: { connection_test: 'supported', system_info: 'supported' }, notes: 'Core edge',
+  last_synchronized_at: '2026-09-13T10:00:00Z', capabilities: ['connection_test', 'system_info'], notes: 'Core edge',
+}
+
+const detail = { data: router }
+
+function apiError(status: number, body: unknown) {
+  return Object.assign(new Error(typeof body === 'object' && body !== null && 'message' in body ? String(body.message) : 'Request failed'), { status, body })
 }
 
 describe('RoutersPage', () => {
@@ -45,6 +51,8 @@ describe('RoutersPage', () => {
     render(<ConfirmProvider><RoutersPage token="token" permissions={['routers.view', 'routers.create']} /></ConfirmProvider>)
     await screen.findByText('Edge 01')
     expect(screen.queryByRole('button', { name: /test connection for edge 01/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Edit Edge 01' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Archive Edge 01' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /new router/i }))
     expect(screen.getByLabelText('Vendor')).toBeTruthy()
     expect(screen.queryByLabelText(/password|token|community|private key/i)).toBeNull()
@@ -69,5 +77,91 @@ describe('RoutersPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /test connection for edge 01/i }))
     expect((await screen.findAllByText('Not Configured')).length).toBeGreaterThan(0)
     expect(apiRequest).toHaveBeenCalledWith('/routers/01router/connection-test', { method: 'POST' }, 'token')
+  })
+
+  it('loads system info from the view modal and renders a safe normalized result', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
+    vi.mocked(apiRequest).mockResolvedValueOnce(detail)
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { status: 'connected', vendor: 'mikrotik', model: 'CCR2004', serial_number: 'SN-1', software_version: '7.15', uptime_seconds: 3600, details: { password: 'do-not-render' } } })
+    render(<RoutersPage token="token" permissions={['routers.view', 'routers.test']} />)
+    await screen.findByText('Edge 01')
+    fireEvent.click(screen.getByRole('button', { name: 'View Edge 01' }))
+    expect(await screen.findByText('RECORD DETAILS')).toBeTruthy()
+    expect(screen.getByText('Connection Test')).toBeTruthy()
+    expect(screen.getByText('System Information')).toBeTruthy()
+    expect(screen.getAllByText('Supported').length).toBe(2)
+    fireEvent.click(screen.getByRole('button', { name: /load system information/i }))
+    expect(await screen.findByText('Connected')).toBeTruthy()
+    expect(screen.getAllByText('CCR2004').length).toBeGreaterThan(0)
+    expect(screen.queryByText('do-not-render')).toBeNull()
+    expect(apiRequest).toHaveBeenCalledWith('/routers/01router/system-info', {}, 'token')
+  })
+
+  it('preserves an unsupported connection response as Unsupported without raw payload text', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError(422, { message: 'Connection testing is not supported by this driver.', data: { status: 'unsupported', message: 'secret raw payload' } }))
+    render(<RoutersPage token="token" permissions={['routers.view', 'routers.test']} />)
+    await screen.findByText('Edge 01')
+    fireEvent.click(screen.getByRole('button', { name: /test connection for edge 01/i }))
+    expect(await screen.findByText('Unsupported')).toBeTruthy()
+    expect(screen.queryByText('secret raw payload')).toBeNull()
+  })
+
+  it('shows a loading state while a connection test is pending', async () => {
+    let resolve!: (value: unknown) => void
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
+    vi.mocked(apiRequest).mockReturnValueOnce(new Promise<unknown>(value => { resolve = value }) as Promise<unknown>)
+    render(<RoutersPage token="token" permissions={['routers.view', 'routers.test']} />)
+    await screen.findByText('Edge 01')
+    fireEvent.click(screen.getByRole('button', { name: /test connection for edge 01/i }))
+    expect(await screen.findByRole('button', { name: 'Testing…' })).toBeTruthy()
+    resolve({ data: { status: 'connected', message: 'ignored' } })
+    expect(await screen.findByText('Connected')).toBeTruthy()
+  })
+
+  it('renders failed connection tests with normalized copy', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError(422, { message: 'driver secret leaked', data: { status: 'failed', message: 'driver secret leaked' } }))
+    render(<RoutersPage token="token" permissions={['routers.view', 'routers.test']} />)
+    await screen.findByText('Edge 01')
+    fireEvent.click(screen.getByRole('button', { name: /test connection for edge 01/i }))
+    expect(await screen.findByText('Failed')).toBeTruthy()
+    expect(screen.getByText('The router connection test failed.')).toBeTruthy()
+    expect(screen.queryByText('driver secret leaked')).toBeNull()
+  })
+
+  it('shows view and archive errors with action-specific alerts', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error('detail unavailable'))
+    render(<ConfirmProvider><RoutersPage token="token" permissions={['routers.view', 'routers.delete']} /></ConfirmProvider>)
+    await screen.findByText('Edge 01')
+    fireEvent.click(screen.getByRole('button', { name: 'View Edge 01' }))
+    expect(await screen.findByText('Unable to view router')).toBeTruthy()
+
+    cleanup()
+    vi.clearAllMocks()
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error('archive unavailable'))
+    render(<ConfirmProvider><RoutersPage token="token" permissions={['routers.view', 'routers.delete']} /></ConfirmProvider>)
+    await screen.findByText('Edge 01')
+    fireEvent.click(screen.getByRole('button', { name: 'Archive Edge 01' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive' }))
+    expect(await screen.findByText('Unable to archive router')).toBeTruthy()
+  })
+
+  it('resets edit values when switching rows but preserves typed values after save errors', async () => {
+    const secondRouter = { ...router, public_id: '02router', name: 'Edge 02' }
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router, secondRouter], current_page: 1, last_page: 1, total: 2 } })
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error('validation failed'))
+    render(<RoutersPage token="token" permissions={['routers.view', 'routers.update']} />)
+    await screen.findByText('Edge 01')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Edge 01' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Typed value' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(await screen.findByText('validation failed')).toBeTruthy()
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Typed value')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Edge 02' }))
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Edge 02')
   })
 })

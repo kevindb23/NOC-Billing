@@ -1,8 +1,13 @@
 import { WifiHighIcon } from '@phosphor-icons/react'
 import { AuditLogsPage } from './AuditLogsPage'
+import { RoutersPage } from './RoutersPage'
 
-export function NetworkModulePage({ module, section = 'Network' }: { module: string; section?: string }) {
+export function NetworkModulePage({ module, section = 'Network' }: { module: string; section?: string; token?: string; permissions?: string[]; isSuperadmin?: boolean }) {
   if (module === 'Audit Logs') return <AuditLogsPage />
+  if (module === 'Routers') {
+    const session = JSON.parse(localStorage.getItem('isp-session') || 'null') as { token?: string; permissions?: string[]; is_superadmin?: boolean } | null
+    if (session?.token) return <RoutersPage token={session.token} permissions={session.permissions} isSuperadmin={session.is_superadmin} />
+  }
   return (
     <div className="flex flex-col gap-5">
       <div className="billing-page-heading flex items-center justify-between gap-4">

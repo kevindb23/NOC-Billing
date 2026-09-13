@@ -78,7 +78,7 @@ class RouterOperation extends Model
 
     public function setErrorMessageAttribute(?string $value): void
     {
-        $this->attributes['error_message'] = $value === null ? null : self::redactString($value);
+        $this->attributes['error_message'] = $value === null ? null : self::redactErrorMessage($value);
     }
 
     private static function redact(mixed $value): mixed
@@ -118,6 +118,15 @@ class RouterOperation extends Model
         }
 
         return $value;
+    }
+
+    private static function redactErrorMessage(string $value): string
+    {
+        if (preg_match('/(?:access[ \t_-]?key|api[ \t_-]?key|auth(?:orization|orisation)?|certificate|cert|client[ \t_-]?secret|community|cookie|credential(?:s)?|header(?:s)?|key|known[ \t_-]?hosts|login|passphrase|password|pem|private[ \t_-]?key|private|secret|session|snmp|ssl|tls|token|user(?:[ \t_-]?name)?|username)(?=\s|[=:])/i', $value)) {
+            return '[REDACTED]';
+        }
+
+        return self::redactString($value);
     }
 
     private static function isSensitiveKey(string $key): bool

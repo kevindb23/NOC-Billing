@@ -51,4 +51,4 @@
 - Task 7: complete (commit 6a7a084; 16 focused tests and 59 assertions passed; touched PHP lint clean; permission migration uses 000026 because 000024 was already occupied)
 - Task 8: complete (commit 7062df5; focused test/lint/build commands blocked because frontend dependencies are not installed; git diff --check passed)
 - Task 9: complete (configuration/docs added; 11 focused tests and compileall passed; no dependency installation or live device calls)
-- Task 10: pending
+- Task 10: complete (RouterOperation error-message redaction fix; Python non-health 81 passed; focused Laravel 43 tests/231 assertions passed; PHP lint and frontend type-check/build passed; RouterPage frontend tests remain environment/test-contract failures; no live-device test)

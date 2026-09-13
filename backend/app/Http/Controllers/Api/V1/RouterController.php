@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreRouterRequest;
 use App\Http\Requests\UpdateRouterRequest;
 use App\Models\Router;
+use App\Services\AuditLogger;
 use App\Services\RouterManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,7 +16,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class RouterController extends Controller
 {
-    public function __construct(private readonly RouterManager $routerManager) {}
+    public function __construct(private readonly RouterManager $routerManager, private readonly AuditLogger $auditLogger) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -46,6 +47,7 @@ class RouterController extends Controller
         $router->created_by = $request->user()->getAuthIdentifier();
         $router->capabilities = $this->driver($router)->capabilities();
         $router->save();
+        $this->auditLogger->record($request, 'router.created', $router, [], ['result' => 'created', ...$this->snapshot($router)]);
 
         return response()->json([
             'data' => $router->fresh(),
@@ -61,22 +63,27 @@ class RouterController extends Controller
     public function update(UpdateRouterRequest $request, string $publicId): JsonResponse
     {
         $router = $this->router($publicId);
+        $oldSnapshot = $this->snapshot($router);
         $data = $request->validated();
         $router->fill($data);
         $router->capabilities = $this->driver($router)->capabilities();
         $router->save();
+        $this->auditLogger->record($request, 'router.updated', $router, $oldSnapshot, ['result' => 'updated', ...$this->snapshot($router)]);
 
         return response()->json(['data' => $router->fresh()]);
     }
 
-    public function destroy(string $publicId): Response
+    public function destroy(Request $request, string $publicId): Response
     {
-        $this->router($publicId)->delete();
+        $router = $this->router($publicId);
+        $oldSnapshot = $this->snapshot($router);
+        $router->delete();
+        $this->auditLogger->record($request, 'router.deleted', $router, $oldSnapshot, ['result' => 'deleted']);
 
         return response()->noContent();
     }
 
-    public function connectionTest(string $publicId): JsonResponse
+    public function connectionTest(Request $request, string $publicId): JsonResponse
     {
         $router = $this->router($publicId);
 
@@ -86,10 +93,12 @@ class RouterController extends Controller
             return $this->unprocessable($exception->getMessage());
         }
 
+        $this->auditLogger->record($request, 'router.connection_tested', $router, [], ['result' => $result]);
+
         return $this->actionResult($result);
     }
 
-    public function systemInfo(string $publicId): JsonResponse
+    public function systemInfo(Request $request, string $publicId): JsonResponse
     {
         $router = $this->router($publicId);
 
@@ -98,6 +107,8 @@ class RouterController extends Controller
         } catch (InvalidArgumentException $exception) {
             return $this->unprocessable($exception->getMessage());
         }
+
+        $this->auditLogger->record($request, 'router.system_info_requested', $router, [], ['result' => $result]);
 
         return $this->actionResult($result);
     }
@@ -132,5 +143,28 @@ class RouterController extends Controller
     private function unprocessable(string $message): JsonResponse
     {
         return response()->json(['message' => $message], Response::HTTP_UNPROCESSABLE_ENTITY);
+    }
+
+    /** @return array<string, mixed> */
+    private function snapshot(Router $router): array
+    {
+        return $router->only([
+            'public_id',
+            'name',
+            'hostname',
+            'management_ip',
+            'vendor',
+            'model',
+            'software_version',
+            'serial_number',
+            'driver',
+            'preferred_transport',
+            'status',
+            'capabilities',
+            'last_contact_at',
+            'last_synchronized_at',
+            'notes',
+            'created_by',
+        ]);
     }
 }

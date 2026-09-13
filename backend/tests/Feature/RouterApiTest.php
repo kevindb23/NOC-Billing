@@ -78,6 +78,78 @@ class RouterApiTest extends TestCase
         $this->getJson('/api/v1/routers/'.$publicId)->assertNotFound();
     }
 
+    public function test_router_routes_require_router_permissions(): void
+    {
+        $actor = User::factory()->create();
+        Sanctum::actingAs($actor);
+        $router = Router::create($this->routerAttributes('Protected router'));
+
+        $routes = [
+            ['GET', '/api/v1/routers'],
+            ['POST', '/api/v1/routers'],
+            ['GET', '/api/v1/routers/'.$router->public_id],
+            ['PUT', '/api/v1/routers/'.$router->public_id],
+            ['DELETE', '/api/v1/routers/'.$router->public_id],
+            ['POST', '/api/v1/routers/'.$router->public_id.'/connection-test'],
+            ['GET', '/api/v1/routers/'.$router->public_id.'/system-info'],
+        ];
+
+        foreach ($routes as [$method, $uri]) {
+            $this->json($method, $uri)->assertForbidden();
+        }
+    }
+
+    public function test_router_lifecycle_and_driver_actions_write_audits_without_secrets(): void
+    {
+        $actor = $this->actorWithRouterPermissions();
+        Sanctum::actingAs($actor);
+
+        $created = $this->withHeader('X-Request-Id', 'router-create-correlation')->postJson('/api/v1/routers', [
+            ...$this->routerAttributes('Audited router'),
+            'metadata' => ['site' => 'main', 'credentials' => ['password' => 'do-not-log']],
+        ])->assertCreated();
+        $publicId = $created->json('data.public_id');
+
+        $this->withHeader('X-Request-Id', 'router-update-correlation')
+            ->putJson('/api/v1/routers/'.$publicId, ['name' => 'Audited router updated'])
+            ->assertOk();
+        $this->withHeader('X-Request-Id', 'router-test-correlation')
+            ->postJson('/api/v1/routers/'.$publicId.'/connection-test')
+            ->assertOk();
+        $this->withHeader('X-Request-Id', 'router-info-correlation')
+            ->getJson('/api/v1/routers/'.$publicId.'/system-info')
+            ->assertOk();
+        $this->withHeader('X-Request-Id', 'router-delete-correlation')
+            ->deleteJson('/api/v1/routers/'.$publicId)
+            ->assertNoContent();
+
+        $logs = AuditLog::query()
+            ->where('auditable_type', Router::class)
+            ->where('auditable_id', Router::withTrashed()->where('public_id', $publicId)->value('id'))
+            ->orderBy('id')
+            ->get();
+
+        $this->assertSame([
+            'router.created',
+            'router.updated',
+            'router.connection_tested',
+            'router.system_info_requested',
+            'router.deleted',
+        ], $logs->pluck('action')->all());
+        $this->assertSame($actor->id, $logs->first()->actor_user_id);
+        $this->assertSame('router-create-correlation', $logs->first()->correlation_id);
+        $this->assertSame('created', $logs->first()->new_values['result']);
+        $this->assertSame('Audited router', $logs->get(1)->old_values['name']);
+        $this->assertSame('Audited router updated', $logs->get(1)->new_values['name']);
+        $this->assertSame('not_configured', $logs->get(2)->new_values['result']['status']);
+        $this->assertSame('not_configured', $logs->get(3)->new_values['result']['status']);
+        $this->assertSame('deleted', $logs->last()->new_values['result']);
+
+        $encodedLogs = json_encode($logs->toArray(), JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('do-not-log', $encodedLogs);
+        $this->assertStringNotContainsString('password', $encodedLogs);
+    }
+
     public function test_router_index_paginates_populated_results_and_excludes_soft_deleted_routers(): void
     {
         $actor = $this->actorWithRouterPermissions();
@@ -194,6 +266,7 @@ class RouterApiTest extends TestCase
             'routers.update',
             'routers.delete',
             'routers.test',
+            'routers.export',
         ])->map(fn (string $name): Permission => Permission::create(['name' => $name, 'guard_name' => 'api']));
         $role->permissions()->sync($permissions->pluck('id'));
         $role->users()->attach($actor);

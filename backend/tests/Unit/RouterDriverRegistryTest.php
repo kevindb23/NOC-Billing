@@ -3,6 +3,11 @@
 namespace Tests\Unit;
 
 use App\Contracts\RouterDriverInterface;
+use App\Drivers\Router\CiscoRouterDriver;
+use App\Drivers\Router\JuniperRouterDriver;
+use App\Drivers\Router\LinuxFrrRouterDriver;
+use App\Drivers\Router\MikroTikRouterDriver;
+use App\Drivers\Router\UnavailableRouterDriver;
 use App\DTO\Router\ConnectionResult;
 use App\DTO\Router\DeviceStatusResult;
 use App\Models\Router;
@@ -27,10 +32,10 @@ final class TestRouterDriver implements RouterDriverInterface
     public function testConnection(Router $router): ConnectionResult
     {
         return new ConnectionResult(
-            status: ConnectionResult::STATUS_NOT_CONFIGURED,
+            status: ConnectionResult::STATUS_UNSUPPORTED,
             driver: $this->identifier(),
             capabilities: $this->capabilities(),
-            message: 'No router transport is configured.',
+            message: 'Connection testing is not supported by this driver.',
             checkedAt: CarbonImmutable::now(),
         );
     }
@@ -41,6 +46,49 @@ final class TestRouterDriver implements RouterDriverInterface
             status: DeviceStatusResult::STATUS_NOT_CONFIGURED,
             driver: $this->identifier(),
             message: 'No router transport is configured.',
+            checkedAt: CarbonImmutable::now(),
+        );
+    }
+}
+
+final class DelegatingTestRouterDriver implements RouterDriverInterface
+{
+    public int $connectionCalls = 0;
+
+    public int $systemInfoCalls = 0;
+
+    public function identifier(): string
+    {
+        return 'fake_router';
+    }
+
+    /** @return list<string> */
+    public function capabilities(): array
+    {
+        return ['connection_test', 'system_info'];
+    }
+
+    public function testConnection(Router $router): ConnectionResult
+    {
+        $this->connectionCalls++;
+
+        return new ConnectionResult(
+            status: ConnectionResult::STATUS_NOT_CONFIGURED,
+            driver: $this->identifier(),
+            capabilities: $this->capabilities(),
+            message: 'Fake connection test delegated.',
+            checkedAt: CarbonImmutable::now(),
+        );
+    }
+
+    public function getSystemInfo(Router $router): DeviceStatusResult
+    {
+        $this->systemInfoCalls++;
+
+        return new DeviceStatusResult(
+            status: DeviceStatusResult::STATUS_NOT_CONFIGURED,
+            driver: $this->identifier(),
+            message: 'Fake system info delegated.',
             checkedAt: CarbonImmutable::now(),
         );
     }
@@ -126,6 +174,49 @@ class RouterDriverRegistryTest extends TestCase
                 'nested' => ['api_token' => '[REDACTED]'],
             ],
         ], $result->toArray());
+    }
+
+    public function test_initial_vendor_registrations_advertise_required_operations(): void
+    {
+        $registry = new RouterDriverRegistry;
+
+        foreach ([
+            'mikrotik_router' => MikroTikRouterDriver::class,
+            'juniper_router' => JuniperRouterDriver::class,
+            'cisco_router' => CiscoRouterDriver::class,
+            'linux_frr_router' => LinuxFrrRouterDriver::class,
+        ] as $identifier => $driverClass) {
+            $driver = $registry->resolve($identifier);
+
+            $this->assertInstanceOf($driverClass, $driver);
+            $this->assertContains('connection_test', $driver->capabilities());
+            $this->assertContains('system_info', $driver->capabilities());
+        }
+    }
+
+    public function test_unavailable_driver_returns_unsupported_for_omitted_capabilities(): void
+    {
+        $router = new Router(['name' => 'Test router']);
+        $connectionOnly = new UnavailableRouterDriver('connection_only', 'test', ['connection_test']);
+        $systemInfoOnly = new UnavailableRouterDriver('system_info_only', 'test', ['system_info']);
+
+        $this->assertSame('not_configured', $connectionOnly->testConnection($router)->toArray()['status']);
+        $this->assertSame('unsupported', $connectionOnly->getSystemInfo($router)->toArray()['status']);
+        $this->assertSame('unsupported', $systemInfoOnly->testConnection($router)->toArray()['status']);
+        $this->assertSame('not_configured', $systemInfoOnly->getSystemInfo($router)->toArray()['status']);
+    }
+
+    public function test_manager_delegates_operations_to_an_injected_driver(): void
+    {
+        $driver = new DelegatingTestRouterDriver;
+        $manager = new RouterManager(new RouterDriverRegistry(['fake_router' => $driver]));
+        $router = new Router(['name' => 'Test router', 'driver' => 'fake_router']);
+
+        $this->assertSame($driver, $manager->driverFor($router));
+        $this->assertSame('fake_router', $manager->testConnection($router)->toArray()['driver']);
+        $this->assertSame('fake_router', $manager->getSystemInfo($router)->toArray()['driver']);
+        $this->assertSame(1, $driver->connectionCalls);
+        $this->assertSame(1, $driver->systemInfoCalls);
     }
 
     public function test_device_status_result_serializes_normalized_system_fields(): void
@@ -254,7 +345,7 @@ class RouterDriverRegistryTest extends TestCase
 
         $this->assertSame('mock_router', $driver->identifier());
         $this->assertSame(['system_info'], $driver->capabilities());
-        $this->assertSame('not_configured', $driver->testConnection($router)->toArray()['status']);
+        $this->assertSame('unsupported', $driver->testConnection($router)->toArray()['status']);
         $this->assertSame('not_configured', $driver->getSystemInfo($router)->toArray()['status']);
     }
 

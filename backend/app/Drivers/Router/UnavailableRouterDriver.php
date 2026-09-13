@@ -30,23 +30,40 @@ class UnavailableRouterDriver implements RouterDriverInterface
 
     public function testConnection(Router $router): ConnectionResult
     {
+        $supported = $this->supports('connection_test');
+
         return new ConnectionResult(
-            status: ConnectionResult::STATUS_NOT_CONFIGURED,
+            status: $supported
+                ? ConnectionResult::STATUS_NOT_CONFIGURED
+                : ConnectionResult::STATUS_UNSUPPORTED,
             driver: $this->identifier(),
             capabilities: $this->capabilities(),
-            message: 'No router transport is configured.',
+            message: $supported
+                ? 'No router transport is configured.'
+                : 'Connection testing is not supported by this driver.',
             checkedAt: CarbonImmutable::now(),
         );
     }
 
     public function getSystemInfo(Router $router): DeviceStatusResult
     {
+        $supported = $this->supports('system_info');
+
         return new DeviceStatusResult(
-            status: DeviceStatusResult::STATUS_NOT_CONFIGURED,
+            status: $supported
+                ? DeviceStatusResult::STATUS_NOT_CONFIGURED
+                : DeviceStatusResult::STATUS_UNSUPPORTED,
             driver: $this->identifier(),
             vendor: $this->driverVendor,
-            message: 'No router transport is configured.',
+            message: $supported
+                ? 'No router transport is configured.'
+                : 'System information is not supported by this driver.',
             checkedAt: CarbonImmutable::now(),
         );
+    }
+
+    private function supports(string $capability): bool
+    {
+        return in_array($capability, $this->driverCapabilities, true);
     }
 }

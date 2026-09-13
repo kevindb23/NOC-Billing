@@ -12,13 +12,14 @@ Complete.
 - Added `UnavailableRouterDriver` and the four vendor-specific safe drivers.
 - Unknown identifiers throw a controlled `InvalidArgumentException`.
 - Drivers perform no CLI or network communication and return normalized `not_configured` results.
-- Added shared contract coverage for every registered driver.
+- Drivers return normalized `unsupported` results when an operation is not advertised; advertised operations remain `not_configured` until a real transport exists.
+- Added shared contract coverage for every registered driver, required capabilities, omitted capabilities, and independent manager delegation.
 
 ## Verification
 
 - `php artisan test tests/Unit/RouterDriverRegistryTest.php tests/Feature/RouterApiTest.php`
-  - 11 tests passed
-  - 84 assertions
+- 14 tests passed
+- 105 assertions
 - Laravel Pint passed for all 8 scoped files.
 - `git diff --check` passed.
 

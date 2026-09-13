@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreRouterRequest;
 use App\Http\Requests\UpdateRouterRequest;
+use App\Http\Requests\StoreRouterOperationRequest;
 use App\Models\Router;
 use App\Models\RouterCredential;
+use App\Models\RouterOperation;
 use App\Services\AuditLogger;
 use App\Services\RouterCredentialService;
 use App\Services\RouterManager;
+use App\Services\RouterOperationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +26,7 @@ class RouterController extends Controller
         private readonly RouterManager $routerManager,
         private readonly AuditLogger $auditLogger,
         private readonly RouterCredentialService $credentialService,
+        private readonly RouterOperationService $operationService,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -123,34 +127,62 @@ class RouterController extends Controller
     {
         $router = $this->router($publicId);
 
-        try {
-            $result = $this->routerManager->testConnection($router)->toArray();
-        } catch (InvalidArgumentException $exception) {
-            $this->auditLogger->record($request, 'router.connection_tested', $router, [], ['result' => $this->failedActionResult($router)]);
-
-            return $this->unprocessable($exception->getMessage());
-        }
-
-        $this->auditLogger->record($request, 'router.connection_tested', $router, [], ['result' => $result]);
-
-        return $this->actionResult($result);
+        return $this->queueCompatibilityOperation($request, $router, 'test_connection');
     }
 
     public function systemInfo(Request $request, string $publicId): JsonResponse
     {
         $router = $this->router($publicId);
 
-        try {
-            $result = $this->routerManager->getSystemInfo($router)->toArray();
-        } catch (InvalidArgumentException $exception) {
-            $this->auditLogger->record($request, 'router.system_info_requested', $router, [], ['result' => $this->failedActionResult($router)]);
+        return $this->queueCompatibilityOperation($request, $router, 'get_system_info');
+    }
 
-            return $this->unprocessable($exception->getMessage());
-        }
+    public function storeOperation(StoreRouterOperationRequest $request, string $publicId): JsonResponse
+    {
+        $operation = $this->operationService->createAndDispatch(
+            $request->user(),
+            $this->router($publicId),
+            $request->validated(),
+        );
 
-        $this->auditLogger->record($request, 'router.system_info_requested', $router, [], ['result' => $result]);
+        return response()->json([
+            'data' => $this->operationService->resource($operation),
+            'correlation_id' => $operation->correlation_id,
+        ], Response::HTTP_ACCEPTED);
+    }
 
-        return $this->actionResult($result);
+    public function operations(string $publicId): JsonResponse
+    {
+        $router = $this->router($publicId);
+        $operations = $router->operations()->latest()->paginate(20);
+        $operations->getCollection()->transform(fn (RouterOperation $operation): array => $this->operationService->resource($operation));
+
+        return response()->json(['data' => $operations]);
+    }
+
+    public function showOperation(string $publicId, string $operationPublicId): JsonResponse
+    {
+        $operation = $this->router($publicId)->operations()->where('public_id', $operationPublicId)->firstOrFail();
+
+        return response()->json(['data' => $this->operationService->resource($operation)]);
+    }
+
+    private function queueCompatibilityOperation(Request $request, Router $router, string $operation): JsonResponse
+    {
+        $record = $this->operationService->createAndDispatch(
+            $request->user(),
+            $router,
+            [
+                'operation' => $operation,
+                'parameters' => [],
+                'correlation_id' => $request->header('X-Request-Id') ?: (string) str()->uuid(),
+            ],
+        );
+
+        return response()->json([
+            'data' => $this->operationService->resource($record),
+            'correlation_id' => $record->correlation_id,
+        ], Response::HTTP_ACCEPTED);
     }
 
     private function router(string $publicId): Router

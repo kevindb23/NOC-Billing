@@ -121,6 +121,8 @@ class RouterOperationPersistenceTest extends TestCase
                     'apiKey' => 'snapshot-token-value',
                     'message' => 'username="quoted username value" password="quoted password value"',
                 ],
+                'json_message' => '{"username":"json secret","password":"json pass"}',
+                'prose' => 'The user logged in successfully.',
             ],
             'status' => 'failed',
             'result' => [
@@ -141,6 +143,9 @@ class RouterOperationPersistenceTest extends TestCase
         $this->assertStringContainsString('credential_profile_id', $serialized);
         $this->assertStringContainsString('01J00000000000000000000000', $serialized);
         $this->assertStringContainsString('router-operation-correlation-redaction', $serialized);
+        $this->assertStringContainsString('The user logged in successfully.', $serialized);
+        $this->assertStringNotContainsString('json secret', $serialized);
+        $this->assertStringNotContainsString('json pass', $serialized);
     }
 
     public function test_router_deletion_is_restricted_when_operation_history_exists(): void

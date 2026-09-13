@@ -98,3 +98,17 @@ git diff --check: passed
 
 The normal PHPUnit run remains blocked by the previously reported dependency
 and isolated migration-table limitation.
+
+## Fix round 2
+
+Simplified string redaction to redact the entire string whenever it contains a
+credential-shaped assignment, including JSON-style, quoted, multi-word, and
+header values. Ordinary prose without an assignment remains unchanged, and
+header/header values are again treated as sensitive keys.
+
+Validation:
+
+```text
+PHP lint: passed
+git diff --check: passed
+```

@@ -8,6 +8,9 @@ use App\Models\RouterCredential;
 class RouterCredentialService
 {
     /** @var list<string> */
+    private const CONNECTION_METADATA_FIELDS = ['port', 'api_base_url', 'auth_mode', 'snmp_version'];
+
+    /** @var list<string> */
     private const SECRET_FIELDS = [
         'username',
         'password',
@@ -107,13 +110,16 @@ class RouterCredentialService
     }
 
     /**
-     * @param array<string, mixed> $validated
-     * @param array<string, mixed> $existing
+     * @param  array<string, mixed>  $validated
+     * @param  array<string, mixed>  $existing
      */
     private function connectionMetadata(Router $router, array $validated, array $existing): array
     {
-        $metadata = $existing;
-        if (array_key_exists('port', $validated)) {
+        $transport = (string) $router->preferred_transport;
+        $metadata = $this->transportChanged($router) ? [] : $existing;
+        $metadata = array_intersect_key($metadata, array_flip($this->metadataFieldsForTransport($transport)));
+
+        if (in_array('port', $this->metadataFieldsForTransport($transport), true) && array_key_exists('port', $validated)) {
             if ($validated['port'] === null || $validated['port'] === '') {
                 unset($metadata['port']);
             } else {
@@ -122,7 +128,7 @@ class RouterCredentialService
         }
 
         if (! array_key_exists('port', $metadata)) {
-            $metadata['port'] = match ($router->preferred_transport) {
+            $metadata['port'] = match ($transport) {
                 'ssh' => 22,
                 'netconf' => 830,
                 'snmp' => 161,
@@ -133,7 +139,7 @@ class RouterCredentialService
             }
         }
 
-        foreach (['api_base_url', 'auth_mode', 'snmp_version'] as $field) {
+        foreach (array_diff($this->metadataFieldsForTransport($transport), ['port']) as $field) {
             if (! array_key_exists($field, $validated)) {
                 continue;
             }
@@ -146,5 +152,23 @@ class RouterCredentialService
         }
 
         return $metadata;
+    }
+
+    private function transportChanged(Router $router): bool
+    {
+        $original = $router->getOriginal('preferred_transport');
+
+        return $original !== null && $original !== $router->preferred_transport;
+    }
+
+    /** @return list<string> */
+    private function metadataFieldsForTransport(string $transport): array
+    {
+        return match ($transport) {
+            'api' => ['port', 'api_base_url', 'auth_mode'],
+            'ssh', 'netconf' => ['port'],
+            'snmp' => ['port', 'snmp_version'],
+            default => self::CONNECTION_METADATA_FIELDS,
+        };
     }
 }

@@ -12,6 +12,9 @@ class RouterCredential extends Model
     use HasFactory, HasPublicId;
 
     /** @var list<string> */
+    private const SAFE_CONNECTION_METADATA_FIELDS = ['port', 'api_base_url', 'auth_mode', 'snmp_version'];
+
+    /** @var list<string> */
     protected $fillable = [
         'name',
         'auth_type',
@@ -66,12 +69,16 @@ class RouterCredential extends Model
     /** @return array<string, mixed> */
     public function toResourceArray(): array
     {
+        $connectionMetadata = is_array($this->connection_metadata) ? $this->connection_metadata : [];
+        $connectionMetadata = array_intersect_key($connectionMetadata, array_flip(self::SAFE_CONNECTION_METADATA_FIELDS));
+
         return [
             'public_id' => $this->public_id,
             'name' => $this->name,
             'auth_type' => $this->auth_type,
             'is_primary' => $this->is_primary,
             'version' => $this->version,
+            'connection_metadata' => $connectionMetadata,
             'last_used_at' => $this->last_used_at,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

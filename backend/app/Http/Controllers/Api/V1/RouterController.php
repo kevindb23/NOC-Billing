@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreRouterRequest;
 use App\Http\Requests\UpdateRouterRequest;
 use App\Models\Router;
+use App\Models\RouterCredential;
 use App\Services\AuditLogger;
 use App\Services\RouterCredentialService;
 use App\Services\RouterManager;
@@ -31,6 +32,7 @@ class RouterController extends Controller
         ]);
         $search = $request->string('search')->toString();
         $routers = Router::query()
+            ->with('primaryCredential')
             ->when($search !== '', function ($query) use ($search): void {
                 $query->where(function ($query) use ($search): void {
                     $query->where('name', 'like', "%{$search}%")
@@ -42,6 +44,7 @@ class RouterController extends Controller
             })
             ->latest()
             ->paginate($validated['per_page'] ?? 20);
+        $routers->getCollection()->transform(fn (Router $router): array => $this->resource($router));
 
         return response()->json(['data' => $routers]);
     }
@@ -74,21 +77,24 @@ class RouterController extends Controller
 
     public function show(string $publicId): JsonResponse
     {
-        return response()->json(['data' => $this->router($publicId)]);
+        return response()->json(['data' => $this->resource($this->router($publicId))]);
     }
 
     public function update(UpdateRouterRequest $request, string $publicId): JsonResponse
     {
         $router = $this->router($publicId);
-        $oldSnapshot = $this->snapshot($router);
+        $oldSnapshot = [
+            ...$this->snapshot($router),
+            ...$this->credentialSnapshot($router->primaryCredential()->first()),
+        ];
         $data = $request->validated();
         $profile = $data['credential_profile'] ?? null;
         unset($data['credential_profile']);
         [$router, $credential] = DB::transaction(function () use ($request, $router, $data, $profile, $oldSnapshot): array {
             $router->fill($data);
             $router->capabilities = $this->driver($router)->capabilities();
-            $router->save();
             $credential = is_array($profile) ? $this->credentialService->storeOrReplace($router, $profile) : $router->primaryCredential()->first();
+            $router->save();
             $this->auditLogger->record($request, 'router.updated', $router, $oldSnapshot, [
                 'result' => 'updated',
                 ...$this->snapshot($router),
@@ -215,8 +221,12 @@ class RouterController extends Controller
     /** @return array<string, mixed> */
     private function resource(Router $router, mixed $credential = null): array
     {
-        $credential ??= $router->primaryCredential()->first();
-        $data = $router->toArray();
+        if ($credential === null) {
+            $credential = $router->relationLoaded('primaryCredential')
+                ? $router->getRelation('primaryCredential')
+                : $router->primaryCredential()->first();
+        }
+        $data = $router->attributesToArray();
         $data['credential_configured'] = $credential !== null && $this->credentialService->isConfigured($router, $credential);
         $data['credential_profile'] = $credential ? $this->credentialService->metadata($credential) : null;
         $data['credential_version'] = $credential?->version;
@@ -225,8 +235,11 @@ class RouterController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function credentialSnapshot(mixed $credential): array
+    private function credentialSnapshot(?RouterCredential $credential): array
     {
-        return $credential ? ['credential_profile' => $this->credentialService->metadata($credential)] : [];
+        return [
+            'credential_profile' => $credential ? $this->credentialService->metadata($credential) : null,
+            'credential_version' => $credential?->version,
+        ];
     }
 }

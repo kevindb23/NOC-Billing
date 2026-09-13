@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\Router;
 use App\Models\RouterCredential;
 use App\Models\User;
+use App\Services\RouterCredentialService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -112,6 +113,7 @@ class RouterCredentialApiTest extends TestCase
             ->assertJsonPath('data.credential_profile.auth_type', 'password')
             ->assertJsonPath('data.credential_profile.version', 1)
             ->assertJsonPath('data.credential_version', 1)
+            ->assertJsonPath('data.credential_profile.connection_metadata.port', 22)
             ->assertJsonMissingPath('data.credential_profile.password');
 
         $this->assertStringNotContainsString('secret', $response->getContent());
@@ -119,6 +121,49 @@ class RouterCredentialApiTest extends TestCase
         $this->assertDatabaseCount('router_credentials', 1);
         $rawPassword = DB::table('router_credentials')->value('password');
         $this->assertNotSame('secret', $rawPassword);
+    }
+
+    public function test_index_and_show_return_safe_credential_metadata_without_n_plus_one_queries(): void
+    {
+        $this->authenticateRouterManager();
+        $first = Router::create($this->routerPayload(['name' => 'First credential router']));
+        $second = Router::create($this->routerPayload(['name' => 'Second credential router']));
+        app(RouterCredentialService::class)->storeOrReplace($first, [
+            'name' => 'primary',
+            'api_base_url' => 'https://router-one.example.test/api',
+            'auth_mode' => 'token',
+            'api_token' => 'first-secret',
+            'port' => 8443,
+        ]);
+        app(RouterCredentialService::class)->storeOrReplace($second, [
+            'name' => 'primary',
+            'api_token' => 'second-secret',
+        ]);
+
+        $credentialQueries = [];
+        DB::listen(function ($query) use (&$credentialQueries): void {
+            if (str_contains(strtolower($query->sql), 'router_credentials')) {
+                $credentialQueries[] = $query->sql;
+            }
+        });
+
+        $index = $this->getJson('/api/v1/routers?per_page=2')
+            ->assertOk()
+            ->assertJsonPath('data.data.0.credential_configured', true)
+            ->assertJsonPath('data.data.0.credential_profile.connection_metadata.port', 8443)
+            ->assertJsonPath('data.data.0.credential_profile.connection_metadata.api_base_url', 'https://router-one.example.test/api')
+            ->assertJsonPath('data.data.0.credential_profile.connection_metadata.auth_mode', 'token')
+            ->assertJsonMissingPath('data.data.0.credential_profile.api_token');
+
+        $this->assertCount(1, $credentialQueries);
+        $this->assertStringNotContainsString('first-secret', $index->getContent());
+
+        $this->getJson('/api/v1/routers/'.$first->public_id)
+            ->assertOk()
+            ->assertJsonPath('data.credential_configured', true)
+            ->assertJsonPath('data.credential_profile.connection_metadata.port', 8443)
+            ->assertJsonPath('data.credential_version', 1)
+            ->assertJsonMissingPath('data.credential_profile.api_token');
     }
 
     public function test_update_without_replacing_blank_secrets_preserves_the_existing_profile(): void
@@ -183,6 +228,45 @@ class RouterCredentialApiTest extends TestCase
         $this->assertSame(2, $credential->version);
     }
 
+    public function test_transport_changes_replace_connection_metadata_for_the_new_transport(): void
+    {
+        $this->authenticateRouterManager();
+        $created = $this->postJson('/api/v1/routers', $this->routerPayload([
+            'credential_profile' => [
+                'name' => 'primary',
+                'api_base_url' => 'https://router.example.test/api',
+                'auth_mode' => 'token',
+                'api_token' => 'api-secret',
+                'port' => 8443,
+            ],
+        ]))->assertCreated();
+        $publicId = $created->json('data.public_id');
+
+        $this->putJson('/api/v1/routers/'.$publicId, [
+            'preferred_transport' => 'snmp',
+            'credential_profile' => [
+                'name' => 'primary',
+                'snmp_version' => 'v3',
+                'snmp_community' => 'snmp-secret',
+            ],
+        ])->assertOk()
+            ->assertJsonPath('data.credential_profile.connection_metadata.port', 161)
+            ->assertJsonPath('data.credential_profile.connection_metadata.snmp_version', 'v3')
+            ->assertJsonMissingPath('data.credential_profile.connection_metadata.api_base_url')
+            ->assertJsonMissingPath('data.credential_profile.connection_metadata.auth_mode');
+
+        $this->putJson('/api/v1/routers/'.$publicId, [
+            'preferred_transport' => 'ssh',
+            'credential_profile' => [
+                'name' => 'primary',
+                'username' => 'ssh-user',
+                'password' => 'ssh-secret',
+            ],
+        ])->assertOk()
+            ->assertJsonPath('data.credential_profile.connection_metadata.port', 22)
+            ->assertJsonMissingPath('data.credential_profile.connection_metadata.snmp_version');
+    }
+
     public function test_transport_change_requires_credentials_for_the_new_transport(): void
     {
         $this->authenticateRouterManager();
@@ -232,6 +316,51 @@ class RouterCredentialApiTest extends TestCase
         $this->assertStringNotContainsString('netadmin', $encoded);
     }
 
+    public function test_update_audit_snapshot_contains_old_safe_credential_metadata_and_version(): void
+    {
+        $this->authenticateRouterManager();
+        $created = $this->postJson('/api/v1/routers', $this->routerPayload([
+            'preferred_transport' => 'ssh',
+            'credential_profile' => [
+                'name' => 'primary',
+                'username' => 'netadmin',
+                'password' => 'old-secret',
+                'port' => 2222,
+            ],
+        ]))->assertCreated();
+        $publicId = $created->json('data.public_id');
+
+        $this->putJson('/api/v1/routers/'.$publicId, [
+            'credential_profile' => ['name' => 'primary', 'password' => 'new-secret'],
+        ])->assertOk();
+
+        $audit = AuditLog::query()->where('action', 'router.updated')->latest('id')->firstOrFail();
+        $this->assertSame('primary', $audit->old_values['credential_profile']['name']);
+        $this->assertSame(2222, $audit->old_values['credential_profile']['connection_metadata']['port']);
+        $this->assertSame(1, $audit->old_values['credential_version']);
+        $this->assertSame(2, $audit->new_values['credential_version']);
+        $encoded = json_encode($audit->toArray(), JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('old-secret', $encoded);
+        $this->assertStringNotContainsString('new-secret', $encoded);
+        $this->assertStringNotContainsString('netadmin', $encoded);
+    }
+
+    public function test_transport_default_migration_reverses_mock_conversion_on_rollback(): void
+    {
+        $this->authenticateRouterManager();
+        $router = Router::create($this->routerPayload([
+            'name' => 'Legacy migration router',
+            'preferred_transport' => 'mock',
+        ]));
+        $migration = require database_path('migrations/2026_09_13_000024_change_router_transport_default.php');
+
+        $migration->up();
+        $this->assertSame('api', $router->fresh()->preferred_transport);
+
+        $migration->down();
+        $this->assertSame('mock', $router->fresh()->preferred_transport);
+    }
+
     private function authenticateRouterManager(): User
     {
         config(['auth.guards.sanctum' => ['driver' => 'session', 'provider' => 'users']]);
@@ -250,7 +379,7 @@ class RouterCredentialApiTest extends TestCase
             'name' => 'Router credential manager '.$actor->id,
             'guard_name' => 'api',
         ]);
-        $permissions = collect(['routers.create', 'routers.update'])
+        $permissions = collect(['routers.view', 'routers.create', 'routers.update'])
             ->map(fn (string $name): Permission => Permission::create(['name' => $name, 'guard_name' => 'api']));
         $role->permissions()->sync($permissions->pluck('id'));
         $role->users()->attach($actor, ['organization_id' => $organization->id]);

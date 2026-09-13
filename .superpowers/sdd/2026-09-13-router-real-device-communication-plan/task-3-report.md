@@ -68,3 +68,24 @@ focused Task 3 and Router CRUD suite is the reliable verification gate here.
   service or a worktree environment configured for the intended database.
 - The repository-wide suite has pre-existing environment and unrelated
   baseline failures; they were not changed as part of Task 3.
+
+## Review fixes
+
+- Updated `GET /routers` and `GET /routers/{publicId}` to return the same
+  secret-free credential configuration, profile, version, and safe connection
+  metadata as create/update responses. The index eager-loads primary
+  credentials and transforms the paginator collection without per-router
+  credential queries.
+- Added `port`, `api_base_url`, `auth_mode`, and `snmp_version` to the
+  metadata-only credential resource, with an allowlist that excludes all other
+  connection metadata.
+- Transport changes now discard old transport metadata before applying only
+  fields valid for the new transport and its default port.
+- Update audit snapshots now include the old safe credential profile and
+  credential version, while continuing to exclude secrets.
+- Made the transport-default migration use a transaction for the data update
+  and compensating default restoration around MySQL's non-transactional DDL;
+  rollback also reverses the mock-to-api data conversion.
+- Added regression coverage for GET resources, eager loading, metadata
+  allowlisting, transport replacement, old audit snapshots, and migration
+  rollback.

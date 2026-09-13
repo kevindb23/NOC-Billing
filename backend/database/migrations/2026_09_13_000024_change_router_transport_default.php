@@ -9,17 +9,49 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::table('routers')->where('preferred_transport', 'mock')->update(['preferred_transport' => 'api']);
+        $defaultChanged = false;
 
-        Schema::table('routers', function (Blueprint $table): void {
-            $table->string('preferred_transport')->default('api')->change();
-        });
+        try {
+            Schema::table('routers', function (Blueprint $table): void {
+                $table->string('preferred_transport')->default('api')->change();
+            });
+            $defaultChanged = true;
+
+            DB::transaction(function (): void {
+                DB::table('routers')->where('preferred_transport', 'mock')->update(['preferred_transport' => 'api']);
+            });
+        } catch (\Throwable $exception) {
+            if ($defaultChanged) {
+                Schema::table('routers', function (Blueprint $table): void {
+                    $table->string('preferred_transport')->default('mock')->change();
+                });
+            }
+
+            throw $exception;
+        }
     }
 
     public function down(): void
     {
-        Schema::table('routers', function (Blueprint $table): void {
-            $table->string('preferred_transport')->default('mock')->change();
-        });
+        $defaultChanged = false;
+
+        try {
+            Schema::table('routers', function (Blueprint $table): void {
+                $table->string('preferred_transport')->default('mock')->change();
+            });
+            $defaultChanged = true;
+
+            DB::transaction(function (): void {
+                DB::table('routers')->where('preferred_transport', 'api')->update(['preferred_transport' => 'mock']);
+            });
+        } catch (\Throwable $exception) {
+            if ($defaultChanged) {
+                Schema::table('routers', function (Blueprint $table): void {
+                    $table->string('preferred_transport')->default('api')->change();
+                });
+            }
+
+            throw $exception;
+        }
     }
 };

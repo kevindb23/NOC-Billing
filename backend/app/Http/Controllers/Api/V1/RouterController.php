@@ -7,6 +7,7 @@ use App\Http\Requests\StoreRouterRequest;
 use App\Http\Requests\UpdateRouterRequest;
 use App\Models\Router;
 use App\Services\AuditLogger;
+use App\Services\RouterCredentialService;
 use App\Services\RouterManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +18,11 @@ use Symfony\Component\HttpFoundation\Response;
 
 class RouterController extends Controller
 {
-    public function __construct(private readonly RouterManager $routerManager, private readonly AuditLogger $auditLogger) {}
+    public function __construct(
+        private readonly RouterManager $routerManager,
+        private readonly AuditLogger $auditLogger,
+        private readonly RouterCredentialService $credentialService,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -44,18 +49,25 @@ class RouterController extends Controller
     public function store(StoreRouterRequest $request): JsonResponse
     {
         $data = $request->validated();
-        $router = DB::transaction(function () use ($request, $data): Router {
+        $profile = $data['credential_profile'] ?? null;
+        unset($data['credential_profile']);
+        [$router, $credential] = DB::transaction(function () use ($request, $data, $profile): array {
             $router = new Router($data);
             $router->created_by = $request->user()->getAuthIdentifier();
             $router->capabilities = $this->driver($router)->capabilities();
             $router->save();
-            $this->auditLogger->record($request, 'router.created', $router, [], ['result' => 'created', ...$this->snapshot($router)]);
+            $credential = is_array($profile) ? $this->credentialService->storeOrReplace($router, $profile) : null;
+            $this->auditLogger->record($request, 'router.created', $router, [], [
+                'result' => 'created',
+                ...$this->snapshot($router),
+                ...$this->credentialSnapshot($credential),
+            ]);
 
-            return $router;
+            return [$router, $credential];
         });
 
         return response()->json([
-            'data' => $router->fresh(),
+            'data' => $this->resource($router->fresh(), $credential),
             'correlation_id' => $request->header('X-Request-Id'),
         ], Response::HTTP_CREATED);
     }
@@ -70,16 +82,23 @@ class RouterController extends Controller
         $router = $this->router($publicId);
         $oldSnapshot = $this->snapshot($router);
         $data = $request->validated();
-        $router = DB::transaction(function () use ($request, $router, $data, $oldSnapshot): Router {
+        $profile = $data['credential_profile'] ?? null;
+        unset($data['credential_profile']);
+        [$router, $credential] = DB::transaction(function () use ($request, $router, $data, $profile, $oldSnapshot): array {
             $router->fill($data);
             $router->capabilities = $this->driver($router)->capabilities();
             $router->save();
-            $this->auditLogger->record($request, 'router.updated', $router, $oldSnapshot, ['result' => 'updated', ...$this->snapshot($router)]);
+            $credential = is_array($profile) ? $this->credentialService->storeOrReplace($router, $profile) : $router->primaryCredential()->first();
+            $this->auditLogger->record($request, 'router.updated', $router, $oldSnapshot, [
+                'result' => 'updated',
+                ...$this->snapshot($router),
+                ...$this->credentialSnapshot($credential),
+            ]);
 
-            return $router;
+            return [$router, $credential];
         });
 
-        return response()->json(['data' => $router->fresh()]);
+        return response()->json(['data' => $this->resource($router->fresh(), $credential)]);
     }
 
     public function destroy(Request $request, string $publicId): Response
@@ -191,5 +210,23 @@ class RouterController extends Controller
             'notes',
             'created_by',
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function resource(Router $router, mixed $credential = null): array
+    {
+        $credential ??= $router->primaryCredential()->first();
+        $data = $router->toArray();
+        $data['credential_configured'] = $credential !== null && $this->credentialService->isConfigured($router, $credential);
+        $data['credential_profile'] = $credential ? $this->credentialService->metadata($credential) : null;
+        $data['credential_version'] = $credential?->version;
+
+        return $data;
+    }
+
+    /** @return array<string, mixed> */
+    private function credentialSnapshot(mixed $credential): array
+    {
+        return $credential ? ['credential_profile' => $this->credentialService->metadata($credential)] : [];
     }
 }

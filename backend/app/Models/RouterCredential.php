@@ -18,6 +18,7 @@ class RouterCredential extends Model
         'is_primary',
         'version',
         'last_used_at',
+        'connection_metadata',
     ];
 
     /** @var list<string> */
@@ -54,6 +55,7 @@ class RouterCredential extends Model
         'is_primary' => 'boolean',
         'version' => 'integer',
         'last_used_at' => 'datetime',
+        'connection_metadata' => 'array',
     ];
 
     public function router(): BelongsTo

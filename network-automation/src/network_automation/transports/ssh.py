@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 from collections.abc import Mapping
 from typing import Any, Callable
 
@@ -18,6 +19,40 @@ def _endpoint(target: DeviceTarget) -> str:
 def _secret(credentials: DeviceCredentials, name: str) -> str | None:
     value = getattr(credentials, name, None)
     return value.get_secret_value() if value is not None else None
+
+
+def _key_options(private_key: str | None, passphrase: str | None) -> dict[str, Any]:
+    """Turn encrypted credential material into safe SSH library options."""
+
+    if not private_key:
+        return {}
+    options: dict[str, Any] = {"passphrase": passphrase} if passphrase else {}
+    if "PRIVATE KEY" not in private_key.upper():
+        options["key_file"] = private_key
+        return options
+    try:
+        import paramiko
+    except ImportError as error:
+        raise TransportError(
+            "transport_unavailable",
+            "SSH private-key authentication requires Paramiko to be installed.",
+            cause=error,
+        ) from None
+
+    key_error: BaseException | None = None
+    for key_type in (paramiko.RSAKey, paramiko.Ed25519Key, paramiko.ECDSAKey, paramiko.DSSKey):
+        try:
+            options["pkey"] = key_type.from_private_key(
+                io.StringIO(private_key),
+                password=passphrase,
+            )
+            return options
+        except Exception as error:
+            key_error = error
+    raise map_library_exception(
+        key_error or ValueError("invalid private key"),
+        default_code="authentication_failed",
+    ) from None
 
 
 class _NetmikoSession:
@@ -54,7 +89,7 @@ class _NetmikoSession:
         except TransportError:
             raise
         except Exception as error:
-            raise map_library_exception(error, stale_session=_looks_stale(error)) from error
+            raise map_library_exception(error, stale_session=_looks_stale(error)) from None
 
     async def close(self) -> None:
         if self.closed:
@@ -86,7 +121,7 @@ class _ParamikoSession:
             _, stdout, _ = await asyncio.to_thread(self.client.exec_command, command)
             return await asyncio.to_thread(stdout.read)
         except Exception as error:
-            raise map_library_exception(error, stale_session=_looks_stale(error)) from error
+            raise map_library_exception(error, stale_session=_looks_stale(error)) from None
 
     async def close(self) -> None:
         if self.closed:
@@ -133,6 +168,12 @@ class SshTransport:
             "ssh_strict": bool(target.metadata.get("ssh_strict", True)),
             "system_host_keys": bool(target.metadata.get("system_host_keys", True)),
         }
+        kwargs.update(
+            _key_options(
+                _secret(credentials, "private_key"),
+                _secret(credentials, "passphrase"),
+            )
+        )
         factory = self._netmiko_factory
         if factory is None:
             try:
@@ -149,7 +190,7 @@ class SshTransport:
                 connection = await asyncio.to_thread(factory, **kwargs)
                 return _NetmikoSession(connection)
             except Exception as error:
-                raise map_library_exception(error) from error
+                raise map_library_exception(error) from None
 
         try:
             client_factory = self._paramiko_client_factory
@@ -174,6 +215,12 @@ class SshTransport:
                 "look_for_keys": False,
                 "allow_agent": False,
             }
+            if "pkey" in kwargs:
+                connect_kwargs["pkey"] = kwargs["pkey"]
+            elif "key_file" in kwargs:
+                connect_kwargs["key_filename"] = kwargs["key_file"]
+            if kwargs.get("passphrase"):
+                connect_kwargs["passphrase"] = kwargs["passphrase"]
             await asyncio.to_thread(client.connect, **connect_kwargs)
             return _ParamikoSession(client)
         except ImportError as error:
@@ -181,11 +228,11 @@ class SshTransport:
                 "transport_unavailable",
                 "SSH transport requires Netmiko or Paramiko to be installed.",
                 cause=error,
-            ) from error
+            ) from None
         except TransportError:
             raise
         except Exception as error:
-            raise map_library_exception(error) from error
+            raise map_library_exception(error) from None
 
     async def is_healthy(self, session: DeviceSession) -> bool:
         if getattr(session, "closed", False):

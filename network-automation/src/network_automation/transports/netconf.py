@@ -45,7 +45,7 @@ class _NcclientSession:
         except TransportError:
             raise
         except Exception as error:
-            raise map_library_exception(error, stale_session=_looks_stale(error)) from error
+            raise map_library_exception(error, stale_session=_looks_stale(error)) from None
 
     async def close(self) -> None:
         if self.closed:
@@ -79,7 +79,7 @@ class _PyEzSession:
         except TransportError:
             raise
         except Exception as error:
-            raise map_library_exception(error, stale_session=_looks_stale(error)) from error
+            raise map_library_exception(error, stale_session=_looks_stale(error)) from None
 
     async def close(self) -> None:
         if self.closed:
@@ -140,7 +140,7 @@ class NetconfTransport:
                 connection = await asyncio.to_thread(factory, **kwargs)
                 return _NcclientSession(connection)
             except Exception as error:
-                raise map_library_exception(error) from error
+                raise map_library_exception(error) from None
 
         pyez_factory = self._pyez_factory
         try:
@@ -164,11 +164,11 @@ class NetconfTransport:
                 "transport_unavailable",
                 "NETCONF transport requires ncclient or PyEZ to be installed.",
                 cause=error,
-            ) from error
+            ) from None
         except TransportError:
             raise
         except Exception as error:
-            raise map_library_exception(error) from error
+            raise map_library_exception(error) from None
 
     async def is_healthy(self, session: DeviceSession) -> bool:
         if getattr(session, "closed", False):

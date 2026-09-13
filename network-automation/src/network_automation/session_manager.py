@@ -65,6 +65,7 @@ class SessionManager:
         self._sessions: dict[SessionKey, ManagedSession] = {}
         self._locks: dict[SessionKey, asyncio.Lock] = {}
         self._closed = False
+        self._closing = False
 
     @property
     def sessions(self) -> dict[SessionKey, ManagedSession]:
@@ -99,46 +100,13 @@ class SessionManager:
     ) -> ManagedSession:
         """Return a healthy cached session or connect exactly once per key."""
 
-        if self._closed:
-            raise RuntimeError("session manager is closed")
         key = self.key_for(target)
-        lock = self._locks.setdefault(key, asyncio.Lock())
+        self._ensure_available()
+        await self._invalidate_other_credential_versions(key)
+        lock = self._lock_for(key)
         async with lock:
-            await self._invalidate_other_credential_versions(key)
-            now = time.monotonic()
-            existing = self._sessions.get(key)
-            if existing is not None:
-                if now - existing.last_used_at >= self.idle_timeout:
-                    await self._close_entry(key, existing)
-                else:
-                    try:
-                        healthy = await asyncio.wait_for(
-                            maybe_await(transport.is_healthy(existing.session)),
-                            timeout=self.command_timeout,
-                        )
-                    except Exception:
-                        healthy = False
-                    if healthy:
-                        existing.touch(now)
-                        return existing
-                    await self._close_entry(key, existing)
-
-            started = time.monotonic()
-            session = await asyncio.wait_for(
-                maybe_await(transport.connect(target, credentials)),
-                timeout=self.connect_timeout,
-            )
-            managed = ManagedSession(
-                key=key,
-                target=target,
-                credentials=credentials,
-                transport=transport,
-                session=session,
-                created_at=started,
-                last_used_at=time.monotonic(),
-            )
-            self._sessions[key] = managed
-            return managed
+            self._ensure_available()
+            return await self._get_or_connect_locked(target, credentials, transport, key)
 
     async def execute(
         self,
@@ -168,14 +136,20 @@ class SessionManager:
                     "The device session became unavailable.",
                     stale_session=True,
                     cause=error,
-                ) from error
+                ) from None
+
+        key = self.key_for(target)
+        self._ensure_available()
+        await self._invalidate_other_credential_versions(key)
+        lock = self._lock_for(key)
 
         async def execute_with_policy() -> Any:
-            managed = await self.get_or_connect(target, credentials, transport)
+            self._ensure_available()
+            managed = await self._get_or_connect_locked(target, credentials, transport, key)
             try:
                 return await run_once(managed)
             except TransportError as error:
-                await self.invalidate(managed.key)
+                await self._invalidate_locked(managed.key)
                 if not safe_to_retry or not error.stale_session:
                     if not safe_to_retry and error.stale_session:
                         raise TransportError(
@@ -183,35 +157,56 @@ class SessionManager:
                             "The write result is unknown; it was not retried.",
                             uncertain_commit=True,
                             cause=error,
-                        ) from error
+                        ) from None
                     raise
-                replacement = await self.get_or_connect(target, credentials, transport)
+                replacement = await self._get_or_connect_locked(target, credentials, transport, key)
                 return await run_once(replacement)
 
         try:
-            return await asyncio.wait_for(execute_with_policy(), timeout=self.overall_timeout)
+            async with lock:
+                return await asyncio.wait_for(execute_with_policy(), timeout=self.overall_timeout)
         except asyncio.TimeoutError as error:
-            raise TransportError("operation_timeout", "The device operation timed out.", cause=error) from error
+            await self.invalidate(key)
+            if not safe_to_retry:
+                raise TransportError(
+                    "write_result_unknown",
+                    "The write result is unknown; it was not retried.",
+                    uncertain_commit=True,
+                    cause=error,
+                ) from None
+            raise TransportError(
+                "operation_timeout",
+                "The device operation timed out.",
+                cause=error,
+            ) from None
 
     async def invalidate(self, key: SessionKey) -> None:
         """Close and remove the cached session for a key."""
 
         lock = self._locks.setdefault(key, asyncio.Lock())
         async with lock:
-            entry = self._sessions.pop(key, None)
-            if entry is not None:
-                await self._close_entry(key, entry)
+            await self._invalidate_locked(key)
 
     async def close(self) -> None:
         """Close all sessions; safe to call during worker shutdown more than once."""
 
         if self._closed:
             return
-        self._closed = True
-        entries = list(self._sessions.items())
-        self._sessions.clear()
-        for key, entry in entries:
-            await self._close_entry(key, entry)
+        self._closing = True
+        locks = [(key, self._locks[key]) for key in sorted(self._locks, key=lambda item: item.__repr__())]
+        acquired: list[asyncio.Lock] = []
+        try:
+            for _, lock in locks:
+                await lock.acquire()
+                acquired.append(lock)
+            self._closed = True
+            entries = list(self._sessions.items())
+            self._sessions.clear()
+            for key, entry in entries:
+                await self._close_entry(key, entry)
+        finally:
+            for lock in reversed(acquired):
+                lock.release()
 
     async def _close_entry(self, key: SessionKey, entry: ManagedSession) -> None:
         if self._sessions.get(key) is entry:
@@ -222,6 +217,60 @@ class SessionManager:
             # Closing is best effort.  Never allow a cleanup failure to hide
             # the original stale/invalidating operation.
             return
+
+    async def _invalidate_locked(self, key: SessionKey) -> None:
+        entry = self._sessions.pop(key, None)
+        if entry is not None:
+            await self._close_entry(key, entry)
+
+    def _lock_for(self, key: SessionKey) -> asyncio.Lock:
+        return self._locks.setdefault(key, asyncio.Lock())
+
+    def _ensure_available(self) -> None:
+        if self._closed or self._closing:
+            raise RuntimeError("session manager is closed")
+
+    async def _get_or_connect_locked(
+        self,
+        target: DeviceTarget,
+        credentials: DeviceCredentials,
+        transport: Transport,
+        key: SessionKey,
+    ) -> ManagedSession:
+        now = time.monotonic()
+        existing = self._sessions.get(key)
+        if existing is not None:
+            if now - existing.last_used_at >= self.idle_timeout:
+                await self._close_entry(key, existing)
+            else:
+                try:
+                    healthy = await asyncio.wait_for(
+                        maybe_await(transport.is_healthy(existing.session)),
+                        timeout=self.command_timeout,
+                    )
+                except Exception:
+                    healthy = False
+                if healthy:
+                    existing.touch(now)
+                    return existing
+                await self._close_entry(key, existing)
+
+        started = time.monotonic()
+        session = await asyncio.wait_for(
+            maybe_await(transport.connect(target, credentials)),
+            timeout=self.connect_timeout,
+        )
+        managed = ManagedSession(
+            key=key,
+            target=target,
+            credentials=credentials,
+            transport=transport,
+            session=session,
+            created_at=started,
+            last_used_at=time.monotonic(),
+        )
+        self._sessions[key] = managed
+        return managed
 
     async def _invalidate_other_credential_versions(self, key: SessionKey) -> None:
         """Ensure replacing credentials cannot leave an old live session behind."""
@@ -235,4 +284,8 @@ class SessionManager:
             and old_key.credential_version != key.credential_version
         ]
         for old_key, entry in previous:
-            await self._close_entry(old_key, entry)
+            lock = self._lock_for(old_key)
+            async with lock:
+                current = self._sessions.get(old_key)
+                if current is entry:
+                    await self._close_entry(old_key, entry)

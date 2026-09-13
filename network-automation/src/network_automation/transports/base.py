@@ -8,7 +8,7 @@ whether it is backed by SSH, NETCONF, HTTP, or SNMP.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -33,7 +33,15 @@ class TransportError(RuntimeError):
         self.stale_session = stale_session
         self.uncertain_commit = uncertain_commit
         self.retryable = retryable
-        self.cause = cause
+        self.cause = (
+            {
+                "type": type(cause).__name__,
+                "message": redact_exception(cause),
+            }
+            if cause is not None
+            else None
+        )
+        self.cause_metadata = self.cause
         super().__init__(redact_exception(message))
 
 

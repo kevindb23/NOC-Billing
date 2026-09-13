@@ -58,6 +58,35 @@ class FakeTransport:
         await session.close()
 
 
+class BlockingSession(FakeSession):
+    def __init__(self):
+        super().__init__()
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.active = 0
+        self.max_active = 0
+
+    async def execute(self, operation, parameters=None):
+        self.calls += 1
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        self.started.set()
+        await self.release.wait()
+        self.active -= 1
+        return {"operation": operation, "calls": self.calls}
+
+
+class BlockingTransport(FakeTransport):
+    def __init__(self):
+        super().__init__()
+        self.blocking_session = BlockingSession()
+
+    async def connect(self, target, credentials):
+        self.connect_calls += 1
+        self.sessions.append(self.blocking_session)
+        return self.blocking_session
+
+
 def run(coro):
     return asyncio.run(coro)
 
@@ -173,6 +202,60 @@ def test_write_with_uncertain_result_is_not_retried():
     assert error.value.uncertain_commit is True
     assert transport.connect_calls == 1
     assert transport.sessions[0].closed is True
+
+
+def test_operations_for_one_session_key_are_serialized():
+    manager = SessionManager()
+    transport = BlockingTransport()
+    credentials = DeviceCredentials(username="automation", password="secret")
+
+    async def scenario():
+        first = asyncio.create_task(
+            manager.execute(target(), credentials, transport, "get_system_info", safe_to_retry=True)
+        )
+        await transport.blocking_session.started.wait()
+        second = asyncio.create_task(
+            manager.execute(target(), credentials, transport, "get_system_info", safe_to_retry=True)
+        )
+        await asyncio.sleep(0)
+        assert transport.blocking_session.calls == 1
+        assert transport.blocking_session.max_active == 1
+        transport.blocking_session.release.set()
+        return await asyncio.gather(first, second)
+
+    results = run(scenario())
+
+    assert len(results) == 2
+    assert transport.blocking_session.max_active == 1
+
+
+def test_overall_timeout_invalidates_session_and_marks_write_unknown():
+    class SlowSession(FakeSession):
+        async def execute(self, operation, parameters=None):
+            await asyncio.sleep(1)
+
+    class SlowTransport(FakeTransport):
+        async def connect(self, target, credentials):
+            self.connect_calls += 1
+            session = SlowSession()
+            self.sessions.append(session)
+            return session
+
+    manager = SessionManager(command_timeout=2, overall_timeout=0.01)
+    transport = SlowTransport()
+    credentials = DeviceCredentials(username="automation", password="secret")
+
+    with pytest.raises(TransportError) as error:
+        run(
+            manager.execute(
+                target(), credentials, transport, "apply_configuration", safe_to_retry=False
+            )
+        )
+
+    assert error.value.code == "write_result_unknown"
+    assert error.value.uncertain_commit is True
+    assert transport.sessions[0].closed is True
+    assert manager.sessions == {}
 
 
 def test_manager_close_closes_all_cached_sessions():

@@ -42,7 +42,7 @@ class _SnmpSession:
         except TransportError:
             raise
         except Exception as error:
-            raise map_library_exception(error, stale_session=_looks_stale(error)) from error
+            raise map_library_exception(error, stale_session=_looks_stale(error)) from None
 
     async def close(self) -> None:
         self.closed = True
@@ -98,6 +98,7 @@ class SnmpTransport:
                 udp_target = target_factory.create((host, port), timeout=timeout, retries=retries)
             except AttributeError:
                 udp_target = target_factory((host, port), timeout=timeout, retries=retries)
+            udp_target = await maybe_await(udp_target)
             community_data = CommunityData(community)
             context = ContextData()
 
@@ -126,11 +127,11 @@ class SnmpTransport:
                 "transport_unavailable",
                 "SNMP transport requires PySNMP to be installed.",
                 cause=error,
-            ) from error
+            ) from None
         except TransportError:
             raise
         except Exception as error:
-            raise map_library_exception(error) from error
+            raise map_library_exception(error) from None
 
     async def is_healthy(self, session: DeviceSession) -> bool:
         return not bool(getattr(session, "closed", False))

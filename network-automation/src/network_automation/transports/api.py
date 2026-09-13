@@ -81,7 +81,7 @@ class _ApiSession:
         except TransportError:
             raise
         except Exception as error:
-            raise map_library_exception(error, stale_session=_looks_stale(error)) from error
+            raise map_library_exception(error, stale_session=_looks_stale(error)) from None
 
     async def close(self) -> None:
         if self.closed:
@@ -130,11 +130,11 @@ class ApiTransport:
                 "transport_unavailable",
                 "API transport requires httpx to be installed.",
                 cause=error,
-            ) from error
+            ) from None
         except TransportError:
             raise
         except Exception as error:
-            raise map_library_exception(error) from error
+            raise map_library_exception(error) from None
 
     async def is_healthy(self, session: DeviceSession) -> bool:
         return not bool(getattr(session, "closed", False))

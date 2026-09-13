@@ -22,9 +22,9 @@ export function TableActions({ label, kind, onArchive, onView, onEdit, onVoid }:
   return <div className="inline-flex items-center justify-end gap-1">
     <Button type="button" variant="ghost" size="icon-sm" className="rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`View ${label}`} title="View" onClick={onView}><EyeIcon /></Button>
     {kind === 'operational' && <>
-      <Button type="button" variant="ghost" size="icon-sm" className="rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`Edit ${label}`} title="Edit" onClick={onEdit}><PencilSimpleIcon /></Button>
-      <Button type="button" variant="ghost" size="icon-sm" className="rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`Archive ${label}`} title="Archive" onClick={() => void requestConfirmation('archive')}><ArchiveBoxIcon /></Button>
+      {onEdit && <Button type="button" variant="ghost" size="icon-sm" className="rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`Edit ${label}`} title="Edit" onClick={onEdit}><PencilSimpleIcon /></Button>}
+      {onArchive && <Button type="button" variant="ghost" size="icon-sm" className="rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`Archive ${label}`} title="Archive" onClick={() => void requestConfirmation('archive')}><ArchiveBoxIcon /></Button>}
     </>}
-    {kind === 'financial' && <Button type="button" variant="ghost" size="icon-sm" className="rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`Void ${label}`} title="Void" onClick={() => void requestConfirmation('void')}><ProhibitIcon /></Button>}
+    {kind === 'financial' && onVoid && <Button type="button" variant="ghost" size="icon-sm" className="rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`Void ${label}`} title="Void" onClick={() => void requestConfirmation('void')}><ProhibitIcon /></Button>}
   </div>
 }

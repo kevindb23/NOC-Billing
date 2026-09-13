@@ -19,9 +19,7 @@ class UpdateRouterRequest extends FormRequest
                 'sometimes',
                 'string',
                 'max:150',
-                Rule::unique('routers', 'name')
-                    ->whereNull('deleted_at')
-                    ->ignore($this->route('publicId'), 'public_id'),
+                Rule::unique('routers', 'name')->ignore($this->route('publicId'), 'public_id'),
             ],
             'hostname' => ['sometimes', 'nullable', 'string', 'max:190'],
             'management_ip' => ['sometimes', 'nullable', 'ip'],

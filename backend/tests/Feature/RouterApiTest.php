@@ -78,6 +78,48 @@ class RouterApiTest extends TestCase
         $this->getJson('/api/v1/routers/'.$publicId)->assertNotFound();
     }
 
+    public function test_router_index_paginates_populated_results_and_excludes_soft_deleted_routers(): void
+    {
+        $actor = $this->actorWithRouterPermissions();
+        Sanctum::actingAs($actor);
+        Router::create($this->routerAttributes('Router 1'));
+        $second = Router::create($this->routerAttributes('Router 2'));
+        $deleted = Router::create($this->routerAttributes('Router 3'));
+        $deleted->delete();
+
+        $this->getJson('/api/v1/routers?per_page=1&page=2')
+            ->assertOk()
+            ->assertJsonPath('data.current_page', 2)
+            ->assertJsonPath('data.per_page', 1)
+            ->assertJsonPath('data.total', 2)
+            ->assertJsonPath('data.data.0.name', $second->name)
+            ->assertJsonMissing(['name' => $deleted->name]);
+    }
+
+    public function test_router_index_rejects_invalid_per_page_bounds(): void
+    {
+        $actor = $this->actorWithRouterPermissions();
+        Sanctum::actingAs($actor);
+
+        foreach ([-1, 0, 101, 'many'] as $perPage) {
+            $this->getJson('/api/v1/routers?per_page='.urlencode((string) $perPage))
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors(['per_page']);
+        }
+    }
+
+    public function test_router_name_remains_reserved_after_soft_delete(): void
+    {
+        $actor = $this->actorWithRouterPermissions();
+        Sanctum::actingAs($actor);
+        $router = Router::create($this->routerAttributes('Reserved router'));
+        $this->deleteJson('/api/v1/routers/'.$router->public_id)->assertNoContent();
+
+        $this->postJson('/api/v1/routers', [
+            ...$this->routerAttributes($router->name),
+        ])->assertUnprocessable()->assertJsonValidationErrors(['name']);
+    }
+
     public function test_router_api_validates_fields_and_unknown_driver_actions_are_controlled(): void
     {
         $actor = $this->actorWithRouterPermissions();
@@ -157,6 +199,18 @@ class RouterApiTest extends TestCase
         $role->users()->attach($actor);
 
         return $actor;
+    }
+
+    /** @return array<string, mixed> */
+    private function routerAttributes(string $name): array
+    {
+        return [
+            'name' => $name,
+            'vendor' => 'mikrotik',
+            'driver' => 'mikrotik_router',
+            'preferred_transport' => 'mock',
+            'status' => 'unknown',
+        ];
     }
 
     public function test_router_persistence_contract_is_installation_wide_and_relational(): void

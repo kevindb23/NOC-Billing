@@ -15,7 +15,7 @@ class StoreRouterRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:150', Rule::unique('routers', 'name')->whereNull('deleted_at')],
+            'name' => ['required', 'string', 'max:150', Rule::unique('routers', 'name')],
             'hostname' => ['nullable', 'string', 'max:190'],
             'management_ip' => ['nullable', 'ip'],
             'vendor' => ['required', 'string', Rule::in(['mikrotik', 'juniper', 'cisco', 'linux_frr', 'other'])],

@@ -19,6 +19,9 @@ class RouterController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+        ]);
         $search = $request->string('search')->toString();
         $routers = Router::query()
             ->when($search !== '', function ($query) use ($search): void {
@@ -31,7 +34,7 @@ class RouterController extends Controller
                 });
             })
             ->latest()
-            ->paginate($request->integer('per_page', 20));
+            ->paginate($validated['per_page'] ?? 20);
 
         return response()->json(['data' => $routers]);
     }

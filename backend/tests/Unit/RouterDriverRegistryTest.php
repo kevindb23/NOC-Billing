@@ -6,6 +6,8 @@ use App\Contracts\RouterDriverInterface;
 use App\DTO\Router\ConnectionResult;
 use App\DTO\Router\DeviceStatusResult;
 use App\Models\Router;
+use App\Services\RouterDriverRegistry;
+use App\Services\RouterManager;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
@@ -46,6 +48,55 @@ final class TestRouterDriver implements RouterDriverInterface
 
 class RouterDriverRegistryTest extends TestCase
 {
+    public function test_initial_vendor_drivers_resolve_by_explicit_identifier(): void
+    {
+        $registry = new RouterDriverRegistry;
+
+        foreach ([
+            'mikrotik_router',
+            'juniper_router',
+            'cisco_router',
+            'linux_frr_router',
+        ] as $identifier) {
+            $driver = $registry->resolve($identifier);
+
+            $this->assertInstanceOf(RouterDriverInterface::class, $driver);
+            $this->assertSame($identifier, $driver->identifier());
+            $this->assertNotEmpty($driver->capabilities());
+        }
+    }
+
+    public function test_unknown_driver_identifier_is_rejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unknown router driver [unknown_router].');
+
+        (new RouterDriverRegistry)->resolve('unknown_router');
+    }
+
+    public function test_every_registered_driver_returns_normalized_not_configured_results(): void
+    {
+        $registry = new RouterDriverRegistry;
+        $manager = new RouterManager($registry);
+        $router = new Router([
+            'name' => 'Test router',
+            'driver' => 'mikrotik_router',
+            'preferred_transport' => 'mock',
+        ]);
+
+        foreach ($registry->identifiers() as $identifier) {
+            $router->driver = $identifier;
+
+            $connection = $manager->testConnection($router)->toArray();
+            $systemInfo = $manager->getSystemInfo($router)->toArray();
+
+            $this->assertSame('not_configured', $connection['status']);
+            $this->assertSame($identifier, $connection['driver']);
+            $this->assertSame('not_configured', $systemInfo['status']);
+            $this->assertSame($identifier, $systemInfo['driver']);
+        }
+    }
+
     public function test_connection_result_serializes_to_a_stable_normalized_shape_and_redacts_secrets(): void
     {
         $checkedAt = CarbonImmutable::parse('2026-09-13 12:00:00', 'UTC');

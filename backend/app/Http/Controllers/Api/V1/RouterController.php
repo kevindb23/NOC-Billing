@@ -169,13 +169,21 @@ class RouterController extends Controller
 
     private function queueCompatibilityOperation(Request $request, Router $router, string $operation): JsonResponse
     {
+        $correlationId = $request->header('X-Request-Id');
+        if ($correlationId !== null) {
+            validator(
+                ['correlation_id' => $correlationId],
+                ['correlation_id' => StoreRouterOperationRequest::correlationIdRules()],
+            )->validate();
+        }
+
         $record = $this->operationService->createAndDispatch(
             $request->user(),
             $router,
             [
                 'operation' => $operation,
                 'parameters' => [],
-                'correlation_id' => $request->header('X-Request-Id') ?: (string) str()->uuid(),
+                'correlation_id' => $correlationId ?: (string) str()->uuid(),
             ],
         );
 

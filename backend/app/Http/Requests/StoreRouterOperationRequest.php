@@ -30,8 +30,14 @@ class StoreRouterOperationRequest extends FormRequest
         return [
             'operation' => ['required', 'string', Rule::in(RouterOperationService::operations())],
             'parameters' => ['present', 'array', 'max:30'],
-            'correlation_id' => ['required', 'string', 'max:128', 'regex:/^[A-Za-z0-9._:-]+$/'],
+            'correlation_id' => self::correlationIdRules(),
         ];
+    }
+
+    /** @return list<mixed> */
+    public static function correlationIdRules(): array
+    {
+        return ['required', 'string', 'max:128', 'regex:/^[A-Za-z0-9._:-]+$/'];
     }
 
     public function withValidator(Validator $validator): void

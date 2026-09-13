@@ -28,6 +28,8 @@ class RouterOperation extends Model
         'operation',
         'driver',
         'transport',
+        'credential_profile_id',
+        'credential_version',
         'parameters',
         'status',
         'result',
@@ -46,6 +48,7 @@ class RouterOperation extends Model
         'started_at' => 'datetime',
         'finished_at' => 'datetime',
         'duration_ms' => 'integer',
+        'credential_version' => 'integer',
     ];
 
     public function router(): BelongsTo

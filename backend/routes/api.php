@@ -63,11 +63,14 @@ Route::prefix('v1')->middleware(['auth:sanctum', ResolveOrganization::class])->g
     Route::delete('routers/{publicId}', [RouterController::class, 'destroy'])->middleware('permission:routers.delete');
     Route::post('routers/{publicId}/connection-test', [RouterController::class, 'connectionTest'])->middleware('permission:routers.test');
     Route::get('routers/{publicId}/system-info', [RouterController::class, 'systemInfo'])->middleware('permission:routers.test');
-    Route::post('routers/{publicId}/operations', [RouterController::class, 'storeOperation'])->middleware('router.operation.permission');
-    Route::get('routers/{publicId}/operations', [RouterController::class, 'operations'])->middleware('permission:routers.view');
-    Route::get('routers/{publicId}/operations/{operationPublicId}', [RouterController::class, 'showOperation'])->middleware('permission:routers.view');
     Route::get('invoices', [BillingController::class, 'invoices'])->middleware('api.ability:invoices.view');
     Route::post('invoices', [BillingController::class, 'storeInvoice'])->middleware('api.ability:invoices.create');
     Route::get('payments', [BillingController::class, 'payments'])->middleware('api.ability:payments.view');
     Route::post('payments', [BillingController::class, 'storePayment'])->middleware('api.ability:payments.create');
+});
+
+Route::prefix('v1')->middleware(['auth:sanctum'])->group(function (): void {
+    Route::post('routers/{publicId}/operations', [RouterController::class, 'storeOperation'])->middleware('router.operation.permission');
+    Route::get('routers/{publicId}/operations', [RouterController::class, 'operations'])->middleware('router.operation.permission:history');
+    Route::get('routers/{publicId}/operations/{operationPublicId}', [RouterController::class, 'showOperation'])->middleware('router.operation.permission:history');
 });

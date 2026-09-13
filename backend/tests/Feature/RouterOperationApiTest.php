@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\ExecuteRouterOperation;
+use App\Http\Middleware\ResolveOrganization;
 use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
@@ -47,8 +48,71 @@ class RouterOperationApiTest extends TestCase
 
         $operation = RouterOperation::query()->firstOrFail();
         $this->assertSame($router->primaryCredential->public_id, $operation->parameters['credential_profile_id']);
+        $this->assertSame($router->primaryCredential->public_id, $operation->credential_profile_id);
+        $this->assertSame($router->primaryCredential->version, $operation->credential_version);
         $this->assertStringNotContainsString('router-password', $response->getContent());
         Queue::assertPushed(ExecuteRouterOperation::class, fn (ExecuteRouterOperation $job): bool => $job->operationId === $operation->id);
+    }
+
+    public function test_operation_routes_use_global_permissions_without_an_organization_context(): void
+    {
+        [$actor, $router] = $this->routerFixture(['routers.monitor']);
+        Queue::fake();
+        Sanctum::actingAs($actor);
+
+        $this->withoutMiddleware(ResolveOrganization::class)
+            ->postJson('/api/v1/routers/'.$router->public_id.'/operations', [
+                'operation' => 'get_system_info',
+                'parameters' => [],
+            ])
+            ->assertAccepted();
+    }
+
+    public function test_specific_configuration_permissions_are_not_interchangeable(): void
+    {
+        [$actor, $router] = $this->routerFixture(['routers.configuration.preview']);
+        Queue::fake();
+        Sanctum::actingAs($actor);
+
+        $this->postJson('/api/v1/routers/'.$router->public_id.'/operations', [
+            'operation' => 'preview_configuration',
+            'parameters' => [],
+        ])->assertAccepted();
+
+        $this->postJson('/api/v1/routers/'.$router->public_id.'/operations', [
+            'operation' => 'apply_configuration',
+            'parameters' => [],
+        ])->assertForbidden();
+    }
+
+    public function test_compatibility_routes_reject_an_unsafe_request_id(): void
+    {
+        [$actor, $router] = $this->routerFixture(['routers.test']);
+        Sanctum::actingAs($actor);
+
+        $this->withHeader('X-Request-Id', str_repeat('a', 129))
+            ->postJson('/api/v1/routers/'.$router->public_id.'/connection-test')
+            ->assertUnprocessable();
+    }
+
+    public function test_dispatch_failure_rolls_back_the_queued_operation(): void
+    {
+        [$actor, $router] = $this->routerFixture(['routers.monitor']);
+        $this->mock(\Illuminate\Contracts\Bus\Dispatcher::class, function ($mock): void {
+            $mock->shouldReceive('dispatch')->once()->andThrow(new \RuntimeException('queue unavailable'));
+        });
+
+        try {
+            app(\App\Services\RouterOperationService::class)->createAndDispatch($actor, $router, [
+                'operation' => 'get_system_info',
+                'parameters' => [],
+            ]);
+            $this->fail('The dispatch failure should be raised.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('queue unavailable', $exception->getMessage());
+        }
+
+        $this->assertDatabaseCount('router_operations', 0);
     }
 
     public function test_configuration_operation_uses_the_update_permission_hook(): void
@@ -161,7 +225,7 @@ class RouterOperationApiTest extends TestCase
             'driver' => 'mikrotik_router',
             'preferred_transport' => 'api',
             'status' => 'active',
-            'capabilities' => ['test_connection', 'system_info', 'get_system_info', 'get_interfaces', 'apply_configuration'],
+            'capabilities' => ['test_connection', 'system_info', 'get_system_info', 'get_interfaces', 'preview_configuration', 'apply_configuration'],
             'management_ip' => '192.0.2.10',
         ]);
         app(RouterCredentialService::class)->storeOrReplace($router, [

@@ -47,7 +47,7 @@
 - Task 4: complete (commits d49defb, 9836ae3; 20 focused transport/session tests passed; review findings fixed)
 - Task 6: complete (implementation added; focused Laravel checks passed; existing synchronous RouterApi expectations need migration)
 - Task 5: complete (commit 8da9690; 48 focused driver tests and compileall passed; no dependencies installed)
-- Task 6: pending
+- Task 6: complete (commit c42ef6b plus operation-dispatch hardening; 12 focused tests and 39 assertions passed)
 - Task 7: pending
 - Task 8: pending
 - Task 9: pending

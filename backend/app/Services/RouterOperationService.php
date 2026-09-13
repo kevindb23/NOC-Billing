@@ -7,6 +7,7 @@ use App\Models\Router;
 use App\Models\RouterCredential;
 use App\Models\RouterOperation;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Str;
 
@@ -48,7 +49,28 @@ class RouterOperationService
 
     public static function permissionFor(string $operation): string
     {
-        return self::isConfiguration($operation) ? 'routers.update' : 'routers.test';
+        return self::permissionCandidates($operation)[0];
+    }
+
+    /** @return list<string> */
+    public static function permissionCandidates(string $operation, ?string $context = null): array
+    {
+        if ($context === 'history') {
+            return ['routers.operations.view', 'routers.view'];
+        }
+
+        if (in_array($operation, self::MONITORING_OPERATIONS, true)) {
+            return ['routers.monitor', 'routers.test'];
+        }
+
+        return match ($operation) {
+            'preview_configuration' => ['routers.configuration.preview', 'routers.update'],
+            'apply_configuration' => ['routers.configuration.apply', 'routers.update'],
+            'commit_configuration' => ['routers.configuration.commit', 'routers.update'],
+            'rollback_configuration' => ['routers.configuration.rollback', 'routers.update'],
+            'validate_configuration' => ['routers.configuration.preview', 'routers.update'],
+            default => ['routers.update'],
+        };
     }
 
     /**
@@ -56,37 +78,41 @@ class RouterOperationService
      */
     public function createAndDispatch(User $user, Router $router, array $data): RouterOperation
     {
-        $operation = (string) $data['operation'];
-        $credential = $router->primaryCredential()->first();
+        return DB::transaction(function () use ($user, $router, $data): RouterOperation {
+            $operation = (string) $data['operation'];
+            $credential = $router->primaryCredential()->first();
 
-        if ($credential === null || ! $this->credentialService->isConfigured($router, $credential)) {
-            throw ValidationException::withMessages([
-                'credential_profile' => ['A configured credential profile is required for this operation.'],
+            if ($credential === null || ! $this->credentialService->isConfigured($router, $credential)) {
+                throw ValidationException::withMessages([
+                    'credential_profile' => ['A configured credential profile is required for this operation.'],
+                ]);
+            }
+
+            if (! $this->supports($router, $operation)) {
+                throw ValidationException::withMessages([
+                    'operation' => ['This operation is not supported by the selected router driver.'],
+                ]);
+            }
+
+            $parameters = $data['parameters'] ?? [];
+            $parameters['credential_profile_id'] = $credential->public_id;
+            $operationRecord = RouterOperation::create([
+                'router_id' => $router->getKey(),
+                'requested_by' => $user->getAuthIdentifier(),
+                'operation' => $operation,
+                'driver' => $router->driver,
+                'transport' => $router->preferred_transport,
+                'credential_profile_id' => $credential->public_id,
+                'credential_version' => (int) $credential->version,
+                'parameters' => $parameters,
+                'status' => RouterOperation::STATUS_QUEUED,
+                'correlation_id' => (string) ($data['correlation_id'] ?? Str::uuid()),
             ]);
-        }
 
-        if (! $this->supports($router, $operation)) {
-            throw ValidationException::withMessages([
-                'operation' => ['This operation is not supported by the selected router driver.'],
-            ]);
-        }
+            ExecuteRouterOperation::dispatch($operationRecord->getKey());
 
-        $parameters = $data['parameters'] ?? [];
-        $parameters['credential_profile_id'] = $credential->public_id;
-        $operationRecord = RouterOperation::create([
-            'router_id' => $router->getKey(),
-            'requested_by' => $user->getAuthIdentifier(),
-            'operation' => $operation,
-            'driver' => $router->driver,
-            'transport' => $router->preferred_transport,
-            'parameters' => $parameters,
-            'status' => RouterOperation::STATUS_QUEUED,
-            'correlation_id' => (string) ($data['correlation_id'] ?? Str::uuid()),
-        ]);
-
-        ExecuteRouterOperation::dispatch($operationRecord->getKey());
-
-        return $operationRecord->fresh();
+            return $operationRecord->fresh();
+        });
     }
 
     public function supports(Router $router, string $operation): bool
@@ -105,7 +131,24 @@ class RouterOperationService
     public function gatewayPayload(RouterOperation $operation): array
     {
         $router = $operation->router()->firstOrFail();
-        $credential = $router->primaryCredential()->first();
+        $profileId = $operation->credential_profile_id
+            ?: (is_array($operation->parameters) ? ($operation->parameters['credential_profile_id'] ?? null) : null);
+        $credential = is_string($profileId) && $profileId !== ''
+            ? $router->credentials()->where('public_id', $profileId)->first()
+            : null;
+
+        if ($operation->credential_profile_id === null) {
+            $credential ??= $router->primaryCredential()->first();
+        }
+
+        if ($operation->credential_profile_id !== null
+            && ($credential === null || (int) $credential->version !== (int) $operation->credential_version)) {
+            throw new NetworkAutomationException(
+                'The credential profile changed before this operation was executed.',
+                'credential_version_mismatch',
+                409,
+            );
+        }
 
         if ($credential === null || ! $this->credentialService->isConfigured($router, $credential)) {
             throw new NetworkAutomationException(

@@ -122,6 +122,16 @@ class RouterDriverRegistryTest extends TestCase
                 'certificate' => ['pem' => 'certificate-secret'],
                 'private_key' => 'private-key-secret',
                 'nested' => ['client_secret' => 'nested-secret', 'latency_ms' => 8],
+                'tls' => [
+                    'username' => 'router-user',
+                    'pass' => 'router-pass',
+                    'endpoint' => 'tls://router.example.test',
+                ],
+                'ssl' => [
+                    'username' => 'ssl-user',
+                    'pass' => 'ssl-pass',
+                    'endpoint' => 'ssl://router.example.test',
+                ],
             ],
         );
 
@@ -134,6 +144,12 @@ class RouterDriverRegistryTest extends TestCase
         $this->assertSame('[REDACTED]', $details['private_key']);
         $this->assertSame('[REDACTED]', $details['nested']['client_secret']);
         $this->assertSame(8, $details['nested']['latency_ms']);
+        $this->assertSame('[REDACTED]', $details['tls']['username']);
+        $this->assertSame('[REDACTED]', $details['tls']['pass']);
+        $this->assertSame('[REDACTED]', $details['tls']['endpoint']);
+        $this->assertSame('[REDACTED]', $details['ssl']['username']);
+        $this->assertSame('[REDACTED]', $details['ssl']['pass']);
+        $this->assertSame('[REDACTED]', $details['ssl']['endpoint']);
     }
 
     public function test_device_status_result_redacts_nested_credential_payloads(): void
@@ -150,6 +166,14 @@ class RouterDriverRegistryTest extends TestCase
                     'headers' => ['X-Api-Key' => 'header-secret'],
                     'certificate_chain' => ['certificate-secret'],
                     'client_private_key' => 'key-secret',
+                    'username' => 'tls-user',
+                    'pass' => 'tls-pass',
+                    'endpoint' => 'tls://status.example.test',
+                ],
+                'ssl' => [
+                    'username' => 'ssl-user',
+                    'pass' => 'ssl-pass',
+                    'endpoint' => 'ssl://status.example.test',
                 ],
                 'safe' => ['uptime_source' => 'snmp'],
             ],
@@ -162,6 +186,12 @@ class RouterDriverRegistryTest extends TestCase
         $this->assertSame('[REDACTED]', $details['tls']['headers']['X-Api-Key']);
         $this->assertSame('[REDACTED]', $details['tls']['certificate_chain']);
         $this->assertSame('[REDACTED]', $details['tls']['client_private_key']);
+        $this->assertSame('[REDACTED]', $details['tls']['username']);
+        $this->assertSame('[REDACTED]', $details['tls']['pass']);
+        $this->assertSame('[REDACTED]', $details['tls']['endpoint']);
+        $this->assertSame('[REDACTED]', $details['ssl']['username']);
+        $this->assertSame('[REDACTED]', $details['ssl']['pass']);
+        $this->assertSame('[REDACTED]', $details['ssl']['endpoint']);
         $this->assertSame('snmp', $details['safe']['uptime_source']);
     }
 

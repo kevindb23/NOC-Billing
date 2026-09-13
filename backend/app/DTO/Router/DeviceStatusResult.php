@@ -112,7 +112,7 @@ final class DeviceStatusResult
         return (bool) array_intersect($words, [
             'api', 'auth', 'authorization', 'authorisation', 'certificate', 'certificates', 'cert',
             'community', 'credential', 'credentials', 'cookie', 'header', 'headers', 'key', 'keys',
-            'passphrase', 'password', 'pem', 'private', 'secret', 'session', 'token',
+            'passphrase', 'password', 'pem', 'private', 'secret', 'session', 'ssl', 'tls', 'token',
         ]);
     }
 

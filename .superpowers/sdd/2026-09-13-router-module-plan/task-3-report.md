@@ -46,3 +46,18 @@ php artisan test tests/Unit/RouterDriverRegistryTest.php tests/Feature/RouterApi
 vendor/bin/pint --test ...
 4 files passed
 ```
+
+## Round 2 review fix
+
+- Classified `tls` and `ssl` as sensitive credential containers in both result DTOs.
+- Added regression coverage for ordinary `username`, `pass`, and `endpoint` values nested under both containers in both DTOs.
+
+Verification after the fix:
+
+```text
+php artisan test tests/Unit/RouterDriverRegistryTest.php tests/Feature/RouterApiTest.php
+8 tests passed, 54 assertions
+
+vendor/bin/pint --test ...
+4 files passed
+```

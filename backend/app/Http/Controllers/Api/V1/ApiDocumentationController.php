@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Route;
 
 class ApiDocumentationController extends Controller
 {
@@ -14,11 +15,38 @@ class ApiDocumentationController extends Controller
             'base_url' => url('/api/v1'),
             'authentication' => 'Bearer <token>',
             'modules' => [
-                'dashboard' => 'Dashboard', 'subscribers' => 'Subscribers', 'billing' => 'Billing', 'network' => 'Network', 'routers' => 'Routers', 'payment_gateway' => 'Payment Gateway', 'paymongo' => 'Paymongo', 'users' => 'Users', 'roles' => 'Roles', 'branding' => 'Branding', 'api_tokens' => 'API Tokens', 'email' => 'Email', 'notifications' => 'Notifications', 'audit_logs' => 'Audit logs',
+                'dashboard' => 'Dashboard', 'subscribers' => 'Subscribers', 'billing' => 'Billing', 'network' => 'Network', 'routers' => 'Routers', 'payment_gateway' => 'Payment Gateway', 'paymongo' => 'Paymongo', 'gcash' => 'GCash', 'users' => 'Users', 'roles' => 'Roles', 'branding' => 'Branding', 'api_tokens' => 'API Tokens', 'email' => 'Email', 'notifications' => 'Notifications', 'audit_logs' => 'Audit logs',
             ],
-            'endpoints' => [
-                'GET /auth/me', 'GET|POST|PUT|DELETE /users', 'GET|POST|PUT|DELETE /roles', 'GET|PUT /branding', 'GET|PUT|POST /email', 'GET|PUT|POST /notifications', 'GET|PUT|POST /paymongo', 'POST /paymongo/test-payment', 'GET|POST|DELETE /api-tokens', 'GET /audit-logs', 'GET|POST|PUT|DELETE /customers', 'GET|POST /billing-accounts', 'GET /billing-settings', 'PUT /billing-settings', 'GET /plans', 'GET|POST /subscriber-services', 'GET|POST|PUT|DELETE /subscriptions', 'GET|POST /billing-statements', 'GET|POST /invoices', 'GET|POST /payments', 'GET /routers', 'POST /routers', 'GET /routers/{publicId}', 'PUT /routers/{publicId}', 'DELETE /routers/{publicId}', 'POST /routers/{publicId}/connection-test', 'GET /routers/{publicId}/system-info',
-            ],
+            'endpoints' => $this->endpoints(),
         ]]);
+    }
+
+    /**
+     * Return the public API routes without Laravel's implicit HEAD variants or
+     * the application-level api/v1 prefix.
+     *
+     * @return list<string>
+     */
+    private function endpoints(): array
+    {
+        $endpoints = [];
+
+        foreach (Route::getRoutes() as $route) {
+            $uri = $route->uri();
+
+            if (! str_starts_with($uri, 'api/v1/')) {
+                continue;
+            }
+
+            $path = '/'.substr($uri, strlen('api/v1/'));
+
+            foreach (array_diff($route->methods(), ['HEAD']) as $method) {
+                $endpoints[] = $method.' '.$path;
+            }
+        }
+
+        sort($endpoints);
+
+        return $endpoints;
     }
 }

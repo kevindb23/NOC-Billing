@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RoutersPage } from './RoutersPage'
 import { ConfirmProvider } from './ConfirmProvider'
 import { apiRequest } from '@/lib/api'
+import { notify } from '@/lib/notifications'
 
 vi.mock('@/lib/api', () => ({ apiRequest: vi.fn() }))
 
@@ -25,7 +26,7 @@ describe('RoutersPage', () => {
 
   it('renders loading, empty, error, and populated inventory states', async () => {
     let resolve!: (value: unknown) => void
-    vi.mocked(apiRequest).mockReturnValueOnce(new Promise<unknown>(value => { resolve = value }) as Promise<any>)
+    vi.mocked(apiRequest).mockReturnValueOnce(new Promise<unknown>(value => { resolve = value }))
     render(<RoutersPage token="token" permissions={['routers.view']} />)
     expect(screen.getByText('Loading routers…')).toBeTruthy()
     resolve({ data: { data: [], current_page: 1, last_page: 1, total: 0 } })
@@ -97,6 +98,20 @@ describe('RoutersPage', () => {
     expect(apiRequest).toHaveBeenCalledWith('/routers/01router/system-info', {}, 'token')
   })
 
+  it('shows an action-specific alert when system info is rejected', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
+    vi.mocked(apiRequest).mockResolvedValueOnce(detail)
+    vi.mocked(apiRequest).mockRejectedValueOnce(apiError(500, { message: 'system info details leaked' }))
+    render(<RoutersPage token="token" permissions={['routers.view', 'routers.test']} />)
+    await screen.findByText('Edge 01')
+    fireEvent.click(screen.getByRole('button', { name: 'View Edge 01' }))
+    fireEvent.click(await screen.findByRole('button', { name: /load system information/i }))
+    expect(await screen.findByText('Unable to load system information')).toBeTruthy()
+    expect(screen.getByText('The system information request failed.')).toBeTruthy()
+    expect(screen.queryByText('The router connection test failed.')).toBeNull()
+    expect(screen.queryByText('system info details leaked')).toBeNull()
+  })
+
   it('preserves an unsupported connection response as Unsupported without raw payload text', async () => {
     vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
     vi.mocked(apiRequest).mockRejectedValueOnce(apiError(422, { message: 'Connection testing is not supported by this driver.', data: { status: 'unsupported', message: 'secret raw payload' } }))
@@ -122,11 +137,13 @@ describe('RoutersPage', () => {
   it('renders failed connection tests with normalized copy', async () => {
     vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
     vi.mocked(apiRequest).mockRejectedValueOnce(apiError(422, { message: 'driver secret leaked', data: { status: 'failed', message: 'driver secret leaked' } }))
+    const notifyError = vi.spyOn(notify, 'error')
     render(<RoutersPage token="token" permissions={['routers.view', 'routers.test']} />)
     await screen.findByText('Edge 01')
     fireEvent.click(screen.getByRole('button', { name: /test connection for edge 01/i }))
     expect(await screen.findByText('Failed')).toBeTruthy()
     expect(screen.getByText('The router connection test failed.')).toBeTruthy()
+    expect(notifyError).toHaveBeenCalledWith('Unable to test router connection.')
     expect(screen.queryByText('driver secret leaked')).toBeNull()
   })
 

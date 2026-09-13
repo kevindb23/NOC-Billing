@@ -148,7 +148,13 @@ class RoleController extends Controller
             $permissions = $role->permissions->sortBy('id')->values();
             $resource['permission_ids'] = $permissions->pluck('id')->all();
             $resource['permissions'] = $permissions
-                ->groupBy(fn ($permission): string => in_array(Str::before($permission->name, '.'), ['dashboard', 'billing', 'network'], true) ? Str::title(Str::before($permission->name, '.')) : 'System')
+                ->groupBy(function ($permission): string {
+                    $prefix = Str::before($permission->name, '.');
+
+                    return in_array($prefix, ['dashboard', 'billing', 'network', 'routers'], true)
+                        ? Str::title($prefix)
+                        : 'System';
+                })
                 ->map(fn ($group): array => $group->pluck('id')->values()->all())
                 ->all();
         }

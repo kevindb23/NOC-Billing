@@ -81,6 +81,9 @@ class RouterApiTest extends TestCase
     public function test_router_routes_require_router_permissions(): void
     {
         $actor = User::factory()->create();
+        $role = Role::create(['name' => 'Unrelated permission holder', 'guard_name' => 'api']);
+        $role->permissions()->attach(Permission::create(['name' => 'users.view', 'guard_name' => 'api']));
+        $role->users()->attach($actor);
         Sanctum::actingAs($actor);
         $router = Router::create($this->routerAttributes('Protected router'));
 
@@ -99,6 +102,28 @@ class RouterApiTest extends TestCase
         }
     }
 
+    public function test_router_routes_accept_their_matching_permissions(): void
+    {
+        $router = Router::create($this->routerAttributes('Matching permission router'));
+
+        Sanctum::actingAs($this->actorWithPermission('routers.view'));
+        $this->getJson('/api/v1/routers')->assertOk();
+        $this->getJson('/api/v1/routers/'.$router->public_id)->assertOk();
+
+        Sanctum::actingAs($this->actorWithPermission('routers.create'));
+        $this->postJson('/api/v1/routers', $this->routerAttributes('Created with matching permission'))->assertCreated();
+
+        Sanctum::actingAs($this->actorWithPermission('routers.update'));
+        $this->putJson('/api/v1/routers/'.$router->public_id, ['name' => 'Updated with matching permission'])->assertOk();
+
+        Sanctum::actingAs($this->actorWithPermission('routers.test'));
+        $this->postJson('/api/v1/routers/'.$router->public_id.'/connection-test')->assertOk();
+        $this->getJson('/api/v1/routers/'.$router->public_id.'/system-info')->assertOk();
+
+        Sanctum::actingAs($this->actorWithPermission('routers.delete'));
+        $this->deleteJson('/api/v1/routers/'.$router->public_id)->assertNoContent();
+    }
+
     public function test_router_lifecycle_and_driver_actions_write_audits_without_secrets(): void
     {
         $actor = $this->actorWithRouterPermissions();
@@ -106,13 +131,21 @@ class RouterApiTest extends TestCase
 
         $created = $this->withHeader('X-Request-Id', 'router-create-correlation')->postJson('/api/v1/routers', [
             ...$this->routerAttributes('Audited router'),
-            'metadata' => ['site' => 'main', 'credentials' => ['password' => 'do-not-log']],
+            'metadata' => ['site' => 'main'],
         ])->assertCreated();
         $publicId = $created->json('data.public_id');
+        $created->assertJsonMissingPath('data.metadata');
 
-        $this->withHeader('X-Request-Id', 'router-update-correlation')
+        $updated = $this->withHeader('X-Request-Id', 'router-update-correlation')
             ->putJson('/api/v1/routers/'.$publicId, ['name' => 'Audited router updated'])
             ->assertOk();
+        $updated->assertJsonMissingPath('data.metadata');
+        $this->getJson('/api/v1/routers/'.$publicId)
+            ->assertOk()
+            ->assertJsonMissingPath('data.metadata');
+        $this->getJson('/api/v1/routers')
+            ->assertOk()
+            ->assertJsonMissingPath('data.data.0.metadata');
         $this->withHeader('X-Request-Id', 'router-test-correlation')
             ->postJson('/api/v1/routers/'.$publicId.'/connection-test')
             ->assertOk();
@@ -136,8 +169,20 @@ class RouterApiTest extends TestCase
             'router.system_info_requested',
             'router.deleted',
         ], $logs->pluck('action')->all());
-        $this->assertSame($actor->id, $logs->first()->actor_user_id);
-        $this->assertSame('router-create-correlation', $logs->first()->correlation_id);
+        $correlations = [
+            'router-create-correlation',
+            'router-update-correlation',
+            'router-test-correlation',
+            'router-info-correlation',
+            'router-delete-correlation',
+        ];
+        foreach ($logs as $index => $log) {
+            $this->assertSame($actor->id, $log->actor_user_id);
+            $this->assertSame(Router::class, $log->auditable_type);
+            $this->assertSame(Router::withTrashed()->where('public_id', $publicId)->value('id'), $log->auditable_id);
+            $this->assertSame($correlations[$index], $log->correlation_id);
+            $this->assertArrayHasKey('result', $log->new_values);
+        }
         $this->assertSame('created', $logs->first()->new_values['result']);
         $this->assertSame('Audited router', $logs->get(1)->old_values['name']);
         $this->assertSame('Audited router updated', $logs->get(1)->new_values['name']);
@@ -148,6 +193,37 @@ class RouterApiTest extends TestCase
         $encodedLogs = json_encode($logs->toArray(), JSON_THROW_ON_ERROR);
         $this->assertStringNotContainsString('do-not-log', $encodedLogs);
         $this->assertStringNotContainsString('password', $encodedLogs);
+    }
+
+    public function test_router_rejects_credential_metadata_and_hides_metadata_from_resources(): void
+    {
+        $actor = $this->actorWithRouterPermissions();
+        Sanctum::actingAs($actor);
+
+        $create = $this->postJson('/api/v1/routers', [
+            ...$this->routerAttributes('Credential metadata router'),
+            'metadata' => ['credentials' => ['username' => 'admin', 'password' => 'do-not-store']],
+        ])->assertUnprocessable()->assertJsonValidationErrors(['metadata']);
+        $this->assertStringNotContainsString('do-not-store', $create->getContent());
+        $this->assertDatabaseMissing('routers', ['name' => 'Credential metadata router']);
+
+        $router = Router::create([
+            ...$this->routerAttributes('Safe metadata router'),
+            'metadata' => ['site' => 'main'],
+        ]);
+        $update = $this->putJson('/api/v1/routers/'.$router->public_id, [
+            'metadata' => ['tls' => ['password' => 'do-not-store']],
+        ])->assertUnprocessable()->assertJsonValidationErrors(['metadata']);
+        $this->assertStringNotContainsString('do-not-store', $update->getContent());
+
+        $this->getJson('/api/v1/routers/'.$router->public_id)
+            ->assertOk()
+            ->assertJsonMissingPath('data.metadata')
+            ->assertJsonMissing(['do-not-store']);
+        $this->getJson('/api/v1/routers')
+            ->assertOk()
+            ->assertJsonMissingPath('data.data.0.metadata')
+            ->assertJsonMissing(['do-not-store']);
     }
 
     public function test_router_index_paginates_populated_results_and_excludes_soft_deleted_routers(): void
@@ -231,9 +307,27 @@ class RouterApiTest extends TestCase
             'status' => 'unknown',
         ]);
 
-        $this->postJson('/api/v1/routers/'.$router->public_id.'/connection-test')
+        $this->withHeader('X-Request-Id', 'router-failed-connection-correlation')
+            ->postJson('/api/v1/routers/'.$router->public_id.'/connection-test')
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Unknown router driver [unknown_router].');
+        $connectionAudit = AuditLog::where('action', 'router.connection_tested')->latest('id')->firstOrFail();
+        $this->assertSame($actor->id, $connectionAudit->actor_user_id);
+        $this->assertSame(Router::class, $connectionAudit->auditable_type);
+        $this->assertSame($router->id, $connectionAudit->auditable_id);
+        $this->assertSame('router-failed-connection-correlation', $connectionAudit->correlation_id);
+        $this->assertSame('failed', $connectionAudit->new_values['result']['status']);
+
+        $this->withHeader('X-Request-Id', 'router-failed-system-info-correlation')
+            ->getJson('/api/v1/routers/'.$router->public_id.'/system-info')
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Unknown router driver [unknown_router].');
+        $systemInfoAudit = AuditLog::where('action', 'router.system_info_requested')->latest('id')->firstOrFail();
+        $this->assertSame($actor->id, $systemInfoAudit->actor_user_id);
+        $this->assertSame(Router::class, $systemInfoAudit->auditable_type);
+        $this->assertSame($router->id, $systemInfoAudit->auditable_id);
+        $this->assertSame('router-failed-system-info-correlation', $systemInfoAudit->correlation_id);
+        $this->assertSame('failed', $systemInfoAudit->new_values['result']['status']);
     }
 
     public function test_router_api_returns_422_for_an_unsupported_driver_operation(): void
@@ -254,6 +348,11 @@ class RouterApiTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonPath('data.status', 'unsupported')
             ->assertJsonPath('message', 'System information is not supported by this driver.');
+        $audit = AuditLog::where('action', 'router.system_info_requested')->latest('id')->firstOrFail();
+        $this->assertSame($actor->id, $audit->actor_user_id);
+        $this->assertSame(Router::class, $audit->auditable_type);
+        $this->assertSame($router->id, $audit->auditable_id);
+        $this->assertSame('unsupported', $audit->new_values['result']['status']);
     }
 
     private function actorWithRouterPermissions(): User
@@ -269,6 +368,17 @@ class RouterApiTest extends TestCase
             'routers.export',
         ])->map(fn (string $name): Permission => Permission::create(['name' => $name, 'guard_name' => 'api']));
         $role->permissions()->sync($permissions->pluck('id'));
+        $role->users()->attach($actor);
+
+        return $actor;
+    }
+
+    private function actorWithPermission(string $permissionName): User
+    {
+        $actor = User::factory()->create();
+        $role = Role::create(['name' => 'Router '.$permissionName.' holder '.$actor->id, 'guard_name' => 'api']);
+        $permission = Permission::firstOrCreate(['name' => $permissionName], ['guard_name' => 'api']);
+        $role->permissions()->attach($permission);
         $role->users()->attach($actor);
 
         return $actor;

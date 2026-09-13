@@ -10,6 +10,7 @@ use App\Services\AuditLogger;
 use App\Services\RouterManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use Symfony\Component\HttpFoundation\Response;
@@ -43,11 +44,15 @@ class RouterController extends Controller
     public function store(StoreRouterRequest $request): JsonResponse
     {
         $data = $request->validated();
-        $router = new Router($data);
-        $router->created_by = $request->user()->getAuthIdentifier();
-        $router->capabilities = $this->driver($router)->capabilities();
-        $router->save();
-        $this->auditLogger->record($request, 'router.created', $router, [], ['result' => 'created', ...$this->snapshot($router)]);
+        $router = DB::transaction(function () use ($request, $data): Router {
+            $router = new Router($data);
+            $router->created_by = $request->user()->getAuthIdentifier();
+            $router->capabilities = $this->driver($router)->capabilities();
+            $router->save();
+            $this->auditLogger->record($request, 'router.created', $router, [], ['result' => 'created', ...$this->snapshot($router)]);
+
+            return $router;
+        });
 
         return response()->json([
             'data' => $router->fresh(),
@@ -65,10 +70,14 @@ class RouterController extends Controller
         $router = $this->router($publicId);
         $oldSnapshot = $this->snapshot($router);
         $data = $request->validated();
-        $router->fill($data);
-        $router->capabilities = $this->driver($router)->capabilities();
-        $router->save();
-        $this->auditLogger->record($request, 'router.updated', $router, $oldSnapshot, ['result' => 'updated', ...$this->snapshot($router)]);
+        $router = DB::transaction(function () use ($request, $router, $data, $oldSnapshot): Router {
+            $router->fill($data);
+            $router->capabilities = $this->driver($router)->capabilities();
+            $router->save();
+            $this->auditLogger->record($request, 'router.updated', $router, $oldSnapshot, ['result' => 'updated', ...$this->snapshot($router)]);
+
+            return $router;
+        });
 
         return response()->json(['data' => $router->fresh()]);
     }
@@ -77,8 +86,10 @@ class RouterController extends Controller
     {
         $router = $this->router($publicId);
         $oldSnapshot = $this->snapshot($router);
-        $router->delete();
-        $this->auditLogger->record($request, 'router.deleted', $router, $oldSnapshot, ['result' => 'deleted']);
+        DB::transaction(function () use ($request, $router, $oldSnapshot): void {
+            $router->delete();
+            $this->auditLogger->record($request, 'router.deleted', $router, $oldSnapshot, ['result' => 'deleted']);
+        });
 
         return response()->noContent();
     }
@@ -90,6 +101,8 @@ class RouterController extends Controller
         try {
             $result = $this->routerManager->testConnection($router)->toArray();
         } catch (InvalidArgumentException $exception) {
+            $this->auditLogger->record($request, 'router.connection_tested', $router, [], ['result' => $this->failedActionResult($router)]);
+
             return $this->unprocessable($exception->getMessage());
         }
 
@@ -105,6 +118,8 @@ class RouterController extends Controller
         try {
             $result = $this->routerManager->getSystemInfo($router)->toArray();
         } catch (InvalidArgumentException $exception) {
+            $this->auditLogger->record($request, 'router.system_info_requested', $router, [], ['result' => $this->failedActionResult($router)]);
+
             return $this->unprocessable($exception->getMessage());
         }
 
@@ -143,6 +158,16 @@ class RouterController extends Controller
     private function unprocessable(string $message): JsonResponse
     {
         return response()->json(['message' => $message], Response::HTTP_UNPROCESSABLE_ENTITY);
+    }
+
+    /** @return array<string, string> */
+    private function failedActionResult(Router $router): array
+    {
+        return [
+            'status' => 'failed',
+            'driver' => $router->driver,
+            'message' => 'Router driver action failed.',
+        ];
     }
 
     /** @return array<string, mixed> */

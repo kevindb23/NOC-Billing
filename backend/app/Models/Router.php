@@ -8,10 +8,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use InvalidArgumentException;
 
 class Router extends Model
 {
     use HasFactory, HasPublicId, SoftDeletes;
+
+    public const SAFE_METADATA_KEYS = ['site', 'location', 'rack', 'role', 'description', 'tags'];
+
+    protected $hidden = ['metadata'];
 
     protected $fillable = [
         'name',
@@ -47,5 +52,31 @@ class Router extends Model
     public function auditLogs(): MorphMany
     {
         return $this->morphMany(AuditLog::class, 'auditable');
+    }
+
+    public static function isSafeMetadataKey(string $key): bool
+    {
+        return in_array($key, self::SAFE_METADATA_KEYS, true);
+    }
+
+    public function setMetadataAttribute(mixed $value): void
+    {
+        if ($value === null) {
+            $this->attributes['metadata'] = null;
+
+            return;
+        }
+
+        if (! is_array($value)) {
+            throw new InvalidArgumentException('Router metadata must be a flat object.');
+        }
+
+        foreach ($value as $key => $item) {
+            if (! is_string($key) || ! self::isSafeMetadataKey($key) || (! is_scalar($item) && $item !== null)) {
+                throw new InvalidArgumentException('Router metadata contains an unsupported or sensitive field.');
+            }
+        }
+
+        $this->attributes['metadata'] = json_encode($value, JSON_THROW_ON_ERROR);
     }
 }

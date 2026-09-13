@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Router;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class StoreRouterRequest extends FormRequest
 {
@@ -31,7 +33,24 @@ class StoreRouterRequest extends FormRequest
             'preferred_transport' => ['required', 'string', Rule::in(['api', 'ssh', 'netconf', 'snmp', 'mock'])],
             'status' => ['required', 'string', Rule::in(['active', 'inactive', 'maintenance', 'unknown'])],
             'notes' => ['nullable', 'string', 'max:2000'],
-            'metadata' => ['nullable', 'array'],
+            'metadata' => ['nullable', 'array', 'max:20'],
+            'metadata.*' => ['nullable', 'string', 'max:190'],
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $metadata = $this->input('metadata');
+            if (! is_array($metadata)) {
+                return;
+            }
+
+            foreach (array_keys($metadata) as $key) {
+                if (! is_string($key) || ! Router::isSafeMetadataKey($key)) {
+                    $validator->errors()->add('metadata', 'Router metadata may contain only approved non-sensitive fields.');
+                }
+            }
+        });
     }
 }

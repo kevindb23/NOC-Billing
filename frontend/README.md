@@ -1,4 +1,24 @@
-# React + TypeScript + Vite
+# ISP Billing frontend
+
+## Development and production security
+
+`npm run dev` runs Vite’s HMR server. It intentionally serves source modules,
+including `.tsx` files, to the browser. It is bound to `127.0.0.1` by default
+and must not be exposed as the application server.
+
+For deployment, build the frontend and serve only the generated `dist/` folder
+through the production web server:
+
+```bash
+npm ci
+npm run build
+```
+
+The production build has sourcemaps disabled. If remote development access is
+temporarily required, use `npm run dev -- --host 0.0.0.0` only on a protected
+development network; that mode will expose source modules by design.
+
+---
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 

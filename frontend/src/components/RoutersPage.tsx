@@ -47,7 +47,7 @@ export type Router = {
   credential_version?: number | null
 }
 
-export type RouterActionStatus = 'connected' | 'not_configured' | 'unsupported' | 'failed'
+export type RouterActionStatus = 'connected' | 'not_configured' | 'unsupported' | 'failed' | 'queued' | 'running'
 export type RouterActionResult = {
   status: RouterActionStatus
   driver?: string
@@ -64,7 +64,7 @@ export type RouterActionResult = {
 
 type RouterListResponse = { data: { data: Router[]; last_page?: number } }
 type RouterResponse = { data: Router }
-type RouterActionResponse = { data: RouterActionResult }
+type RouterActionResponse = { data: unknown }
 type Capability = { id: string; label: string; supported: boolean }
 type RouterFormValues = Record<string, string> & { preferred_transport: RouterTransport }
 
@@ -83,6 +83,8 @@ const actionCopy: Record<RouterActionStatus, { label: string; message: string }>
   not_configured: { label: 'Not Configured', message: 'No router transport is configured.' },
   unsupported: { label: 'Unsupported', message: 'This operation is not supported by the selected driver.' },
   failed: { label: 'Failed', message: 'The router connection test failed.' },
+  queued: { label: 'Queued', message: 'The router operation is waiting to be processed.' },
+  running: { label: 'Running', message: 'The router operation is in progress.' },
 }
 
 const systemInfoCopy: Record<RouterActionStatus, string> = {
@@ -90,6 +92,8 @@ const systemInfoCopy: Record<RouterActionStatus, string> = {
   not_configured: 'No router transport is configured.',
   unsupported: 'This operation is not supported by the selected driver.',
   failed: 'The system information request failed.',
+  queued: 'The system information request is waiting to be processed.',
+  running: 'The system information request is in progress.',
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -97,7 +101,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isActionStatus(value: unknown): value is RouterActionStatus {
-  return value === 'connected' || value === 'not_configured' || value === 'unsupported' || value === 'failed'
+  return value === 'connected' || value === 'not_configured' || value === 'unsupported' || value === 'failed' || value === 'queued' || value === 'running'
+}
+
+type RouterOperationState = {
+  public_id: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+  result?: unknown
+}
+
+function operationState(value: unknown): RouterOperationState | null {
+  if (!isRecord(value) || typeof value.public_id !== 'string') return null
+  const status = value.status
+  if (status !== 'queued' && status !== 'running' && status !== 'succeeded' && status !== 'failed' && status !== 'cancelled') return null
+  return { public_id: value.public_id, status, result: value.result }
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -371,6 +388,24 @@ export function RoutersPage({ token, permissions, isSuperadmin }: { token: strin
     }
   }
 
+  const waitForAction = async (row: Router, response: RouterActionResponse): Promise<RouterActionResult> => {
+    const initialOperation = operationState(response.data)
+    if (initialOperation === null) return actionResult(response.data) || { status: 'failed' }
+
+    let operation = initialOperation
+    const deadline = Date.now() + 30_000
+    while (operation.status === 'queued' || operation.status === 'running') {
+      if (Date.now() >= deadline) return { status: operation.status }
+      await new Promise(resolve => window.setTimeout(resolve, 400))
+      const polled = await apiRequest<RouterActionResponse>(`/routers/${row.public_id}/operations/${operation.public_id}`, {}, token)
+      const next = operationState(polled.data)
+      if (next === null) return actionResult(polled.data) || { status: 'failed' }
+      operation = next
+    }
+
+    return actionResult(operation.result) || { status: operation.status === 'succeeded' ? 'connected' : 'failed' }
+  }
+
   const test = async (row: Router) => {
     setSelected(row)
     setModal('view')
@@ -379,7 +414,7 @@ export function RoutersPage({ token, permissions, isSuperadmin }: { token: strin
     setResult(null)
     try {
       const response = await apiRequest<RouterActionResponse>(`/routers/${row.public_id}/connection-test`, { method: 'POST' }, token)
-      setResult(actionResult(response.data) || { status: 'failed' })
+      setResult(await waitForAction(row, response))
     } catch (exception) {
       setResult(actionError(exception))
       notify.error('Unable to test router connection.')
@@ -394,7 +429,7 @@ export function RoutersPage({ token, permissions, isSuperadmin }: { token: strin
     setSystemInfo(null)
     try {
       const response = await apiRequest<RouterActionResponse>(`/routers/${row.public_id}/system-info`, {}, token)
-      setSystemInfo(actionResult(response.data) || { status: 'failed' })
+      setSystemInfo(await waitForAction(row, response))
     } catch (exception) {
       const normalized = actionError(exception)
       setSystemInfo(normalized)

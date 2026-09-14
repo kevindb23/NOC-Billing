@@ -80,6 +80,17 @@ describe('RoutersPage', () => {
     expect(apiRequest).toHaveBeenCalledWith('/routers/01router/connection-test', { method: 'POST' }, 'token')
   })
 
+  it('polls queued connection tests until the operation completes', async () => {
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { public_id: '01operation', operation: 'test_connection', status: 'queued' } })
+    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { public_id: '01operation', operation: 'test_connection', status: 'succeeded', result: { status: 'connected', driver: 'mikrotik_router', message: 'Connected' } } })
+    render(<RoutersPage token="token" permissions={['routers.view', 'routers.test']} />)
+    await screen.findByText('Edge 01')
+    fireEvent.click(screen.getByRole('button', { name: /test connection for edge 01/i }))
+    expect(await screen.findByText('Connected')).toBeTruthy()
+    expect(apiRequest).toHaveBeenCalledWith('/routers/01router/operations/01operation', {}, 'token')
+  })
+
   it('loads system info from the view modal and renders a safe normalized result', async () => {
     vi.mocked(apiRequest).mockResolvedValueOnce({ data: { data: [router], current_page: 1, last_page: 1, total: 1 } })
     vi.mocked(apiRequest).mockResolvedValueOnce(detail)

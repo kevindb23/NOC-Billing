@@ -11,6 +11,15 @@ class RouterCredential extends Model
 {
     use HasFactory, HasPublicId;
 
+    protected static function booted(): void
+    {
+        static::saving(function (self $credential): void {
+            $credential->primary_router_key = $credential->is_primary
+                ? $credential->router_id
+                : null;
+        });
+    }
+
     /** @var list<string> */
     private const SAFE_CONNECTION_METADATA_FIELDS = ['port', 'api_base_url', 'auth_mode', 'snmp_version'];
 

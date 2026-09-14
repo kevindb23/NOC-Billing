@@ -28,9 +28,10 @@ return new class extends Migration
             $table->boolean('is_primary')->default(false);
             $table->unsignedInteger('version')->default(1);
             $table->timestamp('last_used_at')->nullable();
-            $table->unsignedBigInteger('primary_router_key')->nullable()->storedAs(
-                'CASE WHEN is_primary = 1 THEN router_id ELSE NULL END'
-            );
+            // Keep this as a regular nullable key. MySQL does not allow a
+            // foreign key column to be referenced by a stored generated
+            // column, while router_id must reference routers.id.
+            $table->unsignedBigInteger('primary_router_key')->nullable();
             $table->timestamps();
 
             $table->unique('primary_router_key', 'router_credentials_one_primary');

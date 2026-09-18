@@ -47,3 +47,12 @@ skills-lock.json
 .worktrees/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+
+# Local agent and design tooling
+.claude/
+.codex/
+.playwright/
+docs/superpowers/
+AGENTS.md
+MASTER_V2.md
+index.nginx-debian.html

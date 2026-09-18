@@ -1,1 +1,0 @@
-"""Deterministic vendor payload parsers."""

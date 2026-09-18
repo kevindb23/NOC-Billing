@@ -1,0 +1,20 @@
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class CreateApiTokenRequest extends FormRequest
+{
+    public function authorize(): bool { return true; }
+
+    public function rules(): array
+    {
+        return [
+            'name' => ['required', 'string', 'max:80'],
+            'abilities' => ['required', 'array', 'min:1'],
+            'abilities.*' => ['string', 'max:100'],
+            'expires_at' => ['nullable', 'date', 'after:today'],
+        ];
+    }
+}

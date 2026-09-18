@@ -2,18 +2,135 @@
 @import "@fontsource/poppins/500.css";
 @import "@fontsource/poppins/600.css";
 @import "@fontsource/poppins/700.css";
-@import "@fontsource-variable/jetbrains-mono";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+  .olt-provisioning-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    justify-items: start;
+    gap: 0.5rem;
+  }
+
+  .olt-provisioning-form > button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  /* Provisioning forms are compact two-column dialogs; actions stay on the final row. */
+  .billing-modal-card.max-w-5xl {
+    max-width: 42rem;
+  }
+
+  .billing-subscription-form {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  .billing-subscription-form > [data-slot="field-group"] {
+    display: grid !important;
+    width: 100% !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 1rem;
+  }
+
+  .billing-subscription-form > [data-slot="field-group"] > [data-slot="field"] {
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .billing-subscription-form .billing-modal-footer {
+    grid-column: 1 / -1;
+  }
+
+  @media (max-width: 639px) {
+    .billing-subscription-form > [data-slot="field-group"] {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+  }
+
+  .billing-modal-card form:has([aria-label="Service-port ID"]),
+  .billing-modal-card form:has([aria-label="TR-069 VLAN slot ID"]),
+  .billing-modal-card form:has([aria-label="VLAN ID"]),
+  .billing-modal-card form:has([aria-label="Customer VLAN"]),
+  .billing-modal-card form:has([aria-label="C-VLAN for ONT line profile"]) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .billing-modal-card form:has([aria-label="Service-port ID"]) select,
+  .billing-modal-card form:has([aria-label="Service-port ID"]) input:not([type="checkbox"]),
+  .billing-modal-card form:has([aria-label="TR-069 VLAN slot ID"]) select,
+  .billing-modal-card form:has([aria-label="TR-069 VLAN slot ID"]) input:not([type="checkbox"]),
+  .billing-modal-card form:has([aria-label="VLAN ID"]) select,
+  .billing-modal-card form:has([aria-label="VLAN ID"]) input:not([type="checkbox"]),
+  .billing-modal-card form:has([aria-label="Customer VLAN"]) select,
+  .billing-modal-card form:has([aria-label="Customer VLAN"]) input:not([type="checkbox"]),
+  .billing-modal-card form:has([aria-label="C-VLAN for ONT line profile"]) select,
+  .billing-modal-card form:has([aria-label="C-VLAN for ONT line profile"]) input:not([type="checkbox"]) {
+    box-sizing: border-box;
+    min-height: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .billing-modal-card form:has([aria-label="Service-port ID"]) > button,
+  .billing-modal-card form:has([aria-label="TR-069 VLAN slot ID"]) > button,
+  .billing-modal-card form:has([aria-label="VLAN ID"]) > div:last-child,
+  .billing-modal-card form:has([aria-label="Customer VLAN"]) > button,
+  .billing-modal-card form:has([aria-label="C-VLAN for ONT line profile"]) > button {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-self: end;
+  }
+
+  .billing-modal-card .olt-provisioning-form-s-vlan > button {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  @media (max-width: 639px) {
+    .billing-modal-card form:has([aria-label="Service-port ID"]),
+    .billing-modal-card form:has([aria-label="TR-069 VLAN slot ID"]),
+    .billing-modal-card form:has([aria-label="VLAN ID"]),
+    .billing-modal-card form:has([aria-label="Customer VLAN"]),
+    .billing-modal-card form:has([aria-label="C-VLAN for ONT line profile"]) {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .billing-modal-card form:has([aria-label="VLAN ID"]) > div:last-child {
+      grid-column: 1;
+    }
+  }
+
+  @media (min-width: 640px) {
+    .olt-provisioning-form {
+      grid-template-columns: 180px 220px 220px minmax(0, 1fr);
+    }
+
+    .olt-provisioning-form-s-vlan {
+      grid-template-columns: 200px 160px 330px 140px 110px;
+    }
+
+    .olt-provisioning-form-s-vlan > button {
+      grid-column: 2;
+      grid-row: 2;
+      justify-self: start;
+    }
+  }
+}
 
 @layer base {
   :root {
     font-synthesis: none;
     text-rendering: optimizeLegibility;
-    --font-sans: 'Poppins', sans-serif;
-    --font-heading: 'Poppins', sans-serif;
-    --font-mono: 'JetBrains Mono Variable', monospace;
+    --font-sans: 'Poppins';
+    --font-heading: 'Poppins';
+    /* Keep the legacy mono utility mapped to the product font. */
+    --font-mono: var(--font-sans);
     --background: oklch(0.978 0.012 88);
     --foreground: oklch(0.205 0.025 260);
     --card: oklch(0.998 0.003 90);
@@ -48,16 +165,32 @@
     --sidebar-ring: oklch(0.81 0.17 145);
   }
 
+  *,
+  *::before,
+  *::after {
+    font-family: var(--font-sans) !important;
+  }
+
   body {
     @apply min-w-[320px] font-sans text-foreground antialiased;
     background-color: var(--background);
     background-image: radial-gradient(circle at 12% 8%, oklch(0.98 0.035 145 / 45%), transparent 27rem), linear-gradient(135deg, transparent 0 48%, oklch(0.94 0.018 88 / 35%) 48.1% 48.25%, transparent 48.35%);
   }
 
+  .font-mono {
+    font-family: var(--font-sans);
+  }
+
   button,
   input,
   select {
     font: inherit;
+  }
+
+  .billing-records [aria-label="Search OLTs"],
+  .billing-records [aria-label="Filter by vendor"] {
+    box-sizing: border-box;
+    height: 2.25rem;
   }
 
   .theme {

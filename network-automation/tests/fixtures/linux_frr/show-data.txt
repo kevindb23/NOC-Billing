@@ -1,7 +1,0 @@
-FRRouting 9.1
-hostname frr-edge
-Linux kernel 6.1.0
-Interface eth0 up/up description uplink mtu 1500 speed 1G mac aa:bb:cc:dd:ee:04 ip 192.0.2.1/31
-0.0.0.0/0 via 192.0.2.0 dev eth0 proto static metric 1
-BGP neighbor 192.0.2.2 remote-as 65002 state Established uptime 1:02:03 prefixes 42
-Traffic eth0 input-bytes 1000 output-bytes 2000 input-packets 10 output-packets 20

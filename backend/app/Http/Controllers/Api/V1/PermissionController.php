@@ -33,6 +33,8 @@ class PermissionController extends Controller
             'subscriber-services' => 'Subscriber Services',
             'paymongo' => 'Paymongo',
             'gcash' => 'GCash',
+            'routers' => 'Routers',
+            'olts' => 'OLTs',
         ];
         $legacyGroups = collect(['Dashboard', 'Billing', 'Network', 'System', 'Users', 'Roles', 'Branding', 'Audit Logs'])
             ->mapWithKeys(fn (string $group): array => [$group => collect()]);

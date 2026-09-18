@@ -1,0 +1,17 @@
+[Unit]
+Description=Persistent Netmiko OLT session service
+After=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/html/backend
+Environment=OLT_SESSION_SOCKET=/run/olt-session/olt-session.sock
+ExecStart=/var/www/html/backend/.venv/bin/python /var/www/html/backend/scripts/olt_session_service.py
+Restart=always
+RestartSec=3
+RuntimeDirectory=olt-session
+ExecStartPost=/usr/bin/php /var/www/html/backend/artisan olts:restore-sessions
+
+[Install]
+WantedBy=multi-user.target

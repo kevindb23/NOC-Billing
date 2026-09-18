@@ -1,0 +1,20 @@
+[Unit]
+Description=Persistent Netmiko router session service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=www-data
+WorkingDirectory=/var/www/html/backend/scripts
+Environment=ROUTER_SESSION_SOCKET=/run/router-session/router-session.sock
+ExecStart=/var/www/html/backend/.venv/bin/python /var/www/html/backend/scripts/router_session_service.py
+Restart=always
+RestartSec=3
+RuntimeDirectory=router-session
+RuntimeDirectoryMode=0770
+UMask=0007
+
+[Install]
+WantedBy=multi-user.target

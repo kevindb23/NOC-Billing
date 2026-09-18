@@ -1,0 +1,20 @@
+[Unit]
+Description=Persistent Netmiko BNG session service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=www-data
+WorkingDirectory=/var/www/html/backend/scripts
+Environment=BNG_SESSION_SOCKET=/run/bng-session/bng-session.sock
+ExecStart=/var/www/html/backend/.venv/bin/python /var/www/html/backend/scripts/bng_session_service.py
+Restart=always
+RestartSec=3
+RuntimeDirectory=bng-session
+RuntimeDirectoryMode=0770
+UMask=0007
+
+[Install]
+WantedBy=multi-user.target

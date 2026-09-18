@@ -47,13 +47,17 @@ class CustomerController extends Controller
     public function update(Request $request, string $publicId): JsonResponse
     {
         $customer = $this->customer($request, $publicId);
-        $customer->update($request->validate([
+        $values = $request->validate([
             'customer_type' => ['sometimes', 'string', 'in:residential,business,corporate'],
             'legal_name' => ['sometimes', 'string', 'max:190'],
             'first_name' => ['nullable', 'string', 'max:100'], 'last_name' => ['nullable', 'string', 'max:100'],
             'email' => ['nullable', 'email', 'max:190'], 'phone' => ['nullable', 'string', 'max:40'],
+            'portal_username' => ['sometimes', 'string', 'max:120'], 'portal_password' => ['nullable', 'string', 'max:255'],
+            'ppp_username' => ['sometimes', 'string', 'max:120'], 'ppp_password' => ['nullable', 'string', 'max:255'],
             'status' => ['sometimes', 'string', 'in:active,inactive'], 'notes' => ['nullable', 'string'],
-        ]));
+        ]);
+        foreach (['portal_password', 'ppp_password'] as $key) if (array_key_exists($key, $values) && blank($values[$key])) unset($values[$key]);
+        $customer->update($values);
         return response()->json(['data' => $customer->fresh()]);
     }
 

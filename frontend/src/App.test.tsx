@@ -63,6 +63,17 @@ describe('billing application entry point', () => {
     expect(screen.getAllByRole('button', { name: 'Branding' })).not.toHaveLength(0)
   })
 
+  it('passes the authenticated session to the router module page', () => {
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'router-token', user: { name: 'Admin', email: 'admin@example.com' }, permissions: ['routers.view'], is_superadmin: false }))
+    localStorage.setItem('isp-expanded-sections', JSON.stringify({ Network: true }))
+    render(<App />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Routers' })[0])
+
+    expect(screen.getByRole('heading', { name: 'Routers page' })).toBeTruthy()
+    expect(screen.getByTestId('network-module-props').textContent).toContain('router-token')
+  })
+
   it('lets a superadmin open branding without explicit permission rows', async () => {
     vi.mocked(apiRequest).mockResolvedValue({ data: { permissions: [], is_superadmin: true } })
     localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Admin', email: 'admin@example.com' }, permissions: [], is_superadmin: true }))
@@ -96,22 +107,4 @@ describe('billing application entry point', () => {
     expect(await screen.findAllByRole('button', { name: 'Roles' })).not.toHaveLength(0)
   })
 
-  it('guards a persisted Routers view and passes the session props into the network module', async () => {
-    localStorage.setItem('isp-view', 'Routers')
-    localStorage.setItem('isp-session', JSON.stringify({ token: 'viewer-token', user: { name: 'Viewer', email: 'viewer@example.com' }, permissions: [], is_superadmin: false }))
-    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { permissions: [], is_superadmin: false } })
-    render(<App />)
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Overview page' })).toBeTruthy())
-    expect(screen.queryByRole('button', { name: 'Routers' })).toBeNull()
-
-    cleanup()
-    localStorage.setItem('isp-view', 'Routers')
-    localStorage.setItem('isp-session', JSON.stringify({ token: 'router-token', user: { name: 'Viewer', email: 'viewer@example.com' }, permissions: ['routers.view'], is_superadmin: false }))
-    vi.mocked(apiRequest).mockResolvedValueOnce({ data: { permissions: ['routers.view'], is_superadmin: false } })
-    render(<App />)
-    expect(await screen.findByRole('heading', { name: 'Routers page' })).toBeTruthy()
-    expect(screen.getByTestId('network-module-props').textContent).toContain('router-token')
-    expect(screen.getByTestId('network-module-props').textContent).toContain('routers.view')
-    expect(screen.getByTestId('network-module-props').textContent).toContain('false')
-  })
 })

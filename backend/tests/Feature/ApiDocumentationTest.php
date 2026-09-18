@@ -17,6 +17,7 @@ class ApiDocumentationTest extends TestCase
 
         $response = $this->getJson('/api/v1/docs')->assertOk();
         $response->assertJsonPath('data.modules.gcash', 'GCash');
+        $response->assertJsonPath('data.modules.routers', 'Routers');
 
         $endpoints = $response->json('data.endpoints');
 
@@ -56,7 +57,6 @@ class ApiDocumentationTest extends TestCase
             'GET /roles/{id}',
             'GET /routers',
             'GET /routers/{publicId}',
-            'GET /routers/{publicId}/system-info',
             'GET /subscriber-services',
             'GET /subscriptions',
             'GET /users',
@@ -78,7 +78,7 @@ class ApiDocumentationTest extends TestCase
             'POST /plans',
             'POST /roles',
             'POST /routers',
-            'POST /routers/{publicId}/connection-test',
+            'POST /routers/test-connection',
             'POST /subscriber-services',
             'POST /subscriptions',
             'POST /users',

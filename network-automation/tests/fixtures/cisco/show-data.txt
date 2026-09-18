@@ -1,9 +1,0 @@
-Cisco IOS XE Software, Version 17.9.4
-cisco ISR4331/K9 (1RU) processor
-Router uptime is 1 week
-Interface              Status  Protocol  Description  MTU  Speed  MAC
-GigabitEthernet0/0     up      up        uplink       1500 1G     aabb.ccdd.ee03
-IP address: 192.0.2.1/31
-Route 0.0.0.0/0 via 192.0.2.0, GigabitEthernet0/0, static, metric 1
-BGP neighbor 192.0.2.2 remote AS 65002 state Established uptime 1:02:03 prefixes 42
-Traffic GigabitEthernet0/0 input-bytes 1000 output-bytes 2000 input-packets 10 output-packets 20

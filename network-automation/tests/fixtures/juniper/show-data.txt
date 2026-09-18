@@ -1,7 +1,0 @@
-<rpc-reply>
-  <software-information><host-name>mx-edge</host-name><product-model>MX204</product-model><junos-version>23.4R1</junos-version></software-information>
-  <physical-interface><name>ge-0/0/0</name><description>uplink</description><admin-status>up</admin-status><oper-status>up</oper-status><current-physical-address>aa:bb:cc:dd:ee:01</current-physical-address><mtu>1514</mtu><speed>1Gbps</speed><logical-interface><address-family><interface-address><ifa-local>192.0.2.1/31</ifa-local></interface-address></address-family></logical-interface></physical-interface>
-  <route><destination>0.0.0.0/0</destination><next-hop>192.0.2.0</next-hop><protocol>Static</protocol><interface-name>ge-0/0/0.0</interface-name></route>
-  <bgp-peer><peer-address>192.0.2.2</peer-address><peer-as>65002</peer-as><peer-state>Established</peer-state><elapsed-time>1:02:03</elapsed-time><active-prefix-count>42</active-prefix-count></bgp-peer>
-  <traffic><interface-name>ge-0/0/0</interface-name><input-bytes>1000</input-bytes><output-bytes>2000</output-bytes><input-packets>10</input-packets><output-packets>20</output-packets></traffic>
-</rpc-reply>

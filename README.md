@@ -255,3 +255,20 @@ sudo git pull --ff-only origin main
 - Keep `.env` and live database dumps out of Git.
 - Use separate credentials for MySQL, OLTs, BNGs, routers, RADIUS, and GenieACS.
 - The sanitized SQL dump contains an administrator password hash, never a plaintext password.
+
+## Uninstall
+
+The uninstaller is a dry run unless `--confirm` is supplied. It removes the application services and Nginx site while preserving shared Ubuntu packages:
+
+```bash
+sudo bash deploy/uninstaller.sh
+sudo bash deploy/uninstaller.sh --confirm
+```
+
+To explicitly remove the application files and database as well:
+
+```bash
+sudo bash deploy/uninstaller.sh --confirm --remove-app --remove-database
+```
+
+Back up `.env` and the database first. The script does not purge shared MySQL, Redis, PHP, Node.js, Nginx, or Python packages because other services may depend on them.

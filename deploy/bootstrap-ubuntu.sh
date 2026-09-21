@@ -142,7 +142,6 @@ check "Super-admin account configured"
 
 log "Checking application services"
 services=(
-  noc-billing-api.service
   noc-billing-queue.service
   olt-session.service
   bng-session.service
@@ -155,7 +154,7 @@ for service in "${services[@]}"; do
   }
 done
 
-for port in 80 3000 8000; do
+for port in 80 3000; do
   for attempt in $(seq 1 20); do
     if (echo > "/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then break; fi
     [[ "$attempt" == 20 ]] && die "Nothing is listening on port ${port}."
@@ -163,7 +162,7 @@ for port in 80 3000 8000; do
   done
 done
 
-api_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/api/v1/acs-servers || true)"
+api_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1/api/v1/acs-servers || true)"
 [[ "$api_status" == "401" || "$api_status" == "403" ]] || die "Laravel API health check failed with HTTP ${api_status:-000}."
 curl -fsS --max-time 10 http://127.0.0.1:3000/ >/dev/null || die "Frontend health check failed."
 
@@ -173,7 +172,6 @@ cat <<EOF
 
 Installation completed.
 Use: sudo systemctl --failed
-Frontend: http://${SERVER_IP}:3000
-API:      http://${SERVER_IP}:8000
-Nginx:    http://${SERVER_IP}:80
+Application: http://${SERVER_IP}
+Application (port 3000): http://${SERVER_IP}:3000
 EOF

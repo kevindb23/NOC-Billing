@@ -73,7 +73,7 @@ npm run build
 
 log "Installing Nginx site"
 install -m 0644 "${APP_ROOT}/deploy/nginx-noc-billing.conf" /etc/nginx/sites-available/noc-billing.conf
-sed -i "s#root /var/www/html/frontend/dist;#root ${FRONTEND}/dist;#; s#SCRIPT_FILENAME /var/www/html/backend/public/index.php;#SCRIPT_FILENAME ${BACKEND}/public/index.php;#; s#DOCUMENT_ROOT /var/www/html/backend/public#DOCUMENT_ROOT ${BACKEND}/public#" /etc/nginx/sites-available/noc-billing.conf
+sed -i "s#root /var/www/html/frontend/dist;#root ${FRONTEND}/dist;#; s#SCRIPT_FILENAME /var/www/html/backend/public/index.php;#SCRIPT_FILENAME ${BACKEND}/public/index.php;#; s#DOCUMENT_ROOT /var/www/html/backend/public#DOCUMENT_ROOT ${BACKEND}/public#; s#/run/php/php8.1-fpm.sock#/run/php/php${PHP_VERSION}-fpm.sock#" /etc/nginx/sites-available/noc-billing.conf
 ln -sfn /etc/nginx/sites-available/noc-billing.conf /etc/nginx/sites-enabled/noc-billing.conf
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
@@ -107,29 +107,6 @@ TimeoutStopSec=30
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/noc-billing-api.service <<EOF
-[Unit]
-Description=Northstar ISP Billing Laravel API
-After=network.target mysql.service redis-server.service
-Wants=mysql.service redis-server.service
-
-[Service]
-Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=${BACKEND}
-Environment=APP_ENV=production
-Environment=PHP_CLI_SERVER_WORKERS=5
-ExecStart=/usr/bin/php ${BACKEND}/artisan serve --host=0.0.0.0 --port=8000
-Restart=always
-RestartSec=5
-KillSignal=SIGTERM
-TimeoutStopSec=30
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 cat > /etc/systemd/system/noc-billing-vite.service <<EOF
 [Unit]
 Description=Northstar ISP Billing frontend server
@@ -154,7 +131,8 @@ EOF
 chown -R www-data:www-data "${BACKEND}/storage" "${BACKEND}/bootstrap/cache"
 systemctl daemon-reload
 systemctl disable --now noc-billing-vite.service 2>/dev/null || true
-systemctl enable --now olt-session.service bng-session.service router-session.service noc-billing-queue.service noc-billing-api.service
+systemctl disable --now noc-billing-api.service noc-billing-vite.service 2>/dev/null || true
+systemctl enable --now olt-session.service bng-session.service router-session.service noc-billing-queue.service
 
 log "Validating services"
 systemctl --no-pager --full --failed || true
@@ -174,8 +152,7 @@ Session services:
   bng-session.service
   router-session.service
 Queue:       noc-billing-queue.service
-API:         noc-billing-api.service (port 8000, five workers)
-Frontend:    Nginx (ports 80 and 3000)
+Application: Nginx + PHP-FPM (ports 80 and 3000)
 
 Before exposing the system, review ${BACKEND}/.env and set APP_ENV=production,
 APP_DEBUG=false, database credentials, mail settings, and trusted application URL.

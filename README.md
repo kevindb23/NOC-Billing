@@ -34,9 +34,8 @@ The installer is non-interactive. `DB_NAME`, `DB_USER`, `DB_HOST`, `ADMIN_NAME`,
 After the installer completes, it prints the server IP and URLs:
 
 ```text
-Frontend: http://SERVER_IP:3000
-API:      http://SERVER_IP:8000
-Nginx:    http://SERVER_IP:80
+Application: http://SERVER_IP
+Application (port 3000): http://SERVER_IP:3000
 ```
 
 Log in with the administrator account retained in the empty database, then change its password immediately.
@@ -46,8 +45,6 @@ Log in with the administrator account retained in the empty database, then chang
 The installer creates and starts:
 
 ```text
-noc-billing-api.service       Laravel API, five workers on port 8000
-noc-billing-vite.service      Vite frontend on port 3000
 noc-billing-queue.service     Laravel Redis queue worker
 olt-session.service           Persistent OLT/Netmiko session service
 bng-session.service           Persistent BNG session service
@@ -62,34 +59,32 @@ Check the installation:
 
 ```bash
 sudo systemctl --failed
-sudo systemctl status noc-billing-api noc-billing-vite noc-billing-queue
+sudo systemctl status nginx php8.1-fpm noc-billing-queue
 sudo systemctl status olt-session bng-session router-session
 ```
 
-Do not start Laravel or Vite manually. The systemd services own ports 8000 and 3000.
+Nginx serves the compiled Vite assets and forwards `/api` requests to PHP-FPM. Do not run `php artisan serve` or Vite as a production service.
 
 ## Logs and troubleshooting
 
 ```bash
-sudo journalctl -u noc-billing-api -f
-sudo journalctl -u noc-billing-vite -f
+sudo journalctl -u nginx -f
 sudo tail -f /var/www/html/backend/storage/logs/laravel.log
 sudo journalctl -u olt-session -f
 sudo journalctl -u bng-session -f
 sudo journalctl -u router-session -f
 ```
 
-If the frontend reports `ECONNREFUSED 127.0.0.1:8000`:
+If the application reports an API connection error:
 
 ```bash
-sudo systemctl restart noc-billing-api
-sudo systemctl status noc-billing-api
+sudo systemctl restart nginx php8.1-fpm
+sudo systemctl status nginx php8.1-fpm
 ```
 
 If a port is already occupied:
 
 ```bash
-sudo ss -ltnp 'sport = :8000'
 sudo ss -ltnp 'sport = :3000'
 ```
 

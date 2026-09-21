@@ -53,6 +53,7 @@ fi
 log "Building frontend"
 cd "${FRONTEND}"
 npm ci
+install -d -o www-data -g www-data -m 0775 "${FRONTEND}/node_modules/.vite-temp"
 npm run build
 
 log "Installing Nginx site"

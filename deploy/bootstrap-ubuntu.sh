@@ -7,15 +7,26 @@ set -Eeuo pipefail
 APP_ROOT="${APP_ROOT:-/var/www/html}"
 REPO_URL="${REPO_URL:-https://github.com/kevindb23/NOC-Billing.git}"
 BRANCH="${BRANCH:-main}"
+PHP_VERSION="${PHP_VERSION:-}"
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo; echo "==> $*"; }
 [[ "$(id -u)" == 0 ]] || die "Run as root."
 
 export DEBIAN_FRONTEND=noninteractive
+if [[ -z "${PHP_VERSION}" ]]; then
+  if apt-cache show php8.1-cli >/dev/null 2>&1; then PHP_VERSION=8.1; else PHP_VERSION=8.3; fi
+fi
+export PHP_VERSION
 log "Installing bootstrap packages"
 apt-get update
-apt-get install -y git curl ca-certificates mysql-server
-systemctl enable --now mysql
+apt-get install -y \
+  git curl ca-certificates unzip rsync build-essential \
+  nginx mysql-server redis-server \
+  python3 python3-venv python3-pip python3-dev \
+  php${PHP_VERSION}-cli php${PHP_VERSION}-fpm php${PHP_VERSION}-common php${PHP_VERSION}-mysql php${PHP_VERSION}-redis \
+  php${PHP_VERSION}-xml php${PHP_VERSION}-curl php${PHP_VERSION}-mbstring php${PHP_VERSION}-zip \
+  composer nodejs npm
+systemctl enable --now mysql redis-server "php${PHP_VERSION}-fpm" nginx
 
 log "Checking out the application"
 if [[ -d "${APP_ROOT}/.git" ]]; then
@@ -84,10 +95,41 @@ set_env REDIS_PORT 6379
 chmod +x "${APP_ROOT}/deploy/install.sh"
 "${APP_ROOT}/deploy/install.sh"
 
+log "Checking application services"
+services=(
+  noc-billing-api.service
+  noc-billing-vite.service
+  noc-billing-queue.service
+  olt-session.service
+  bng-session.service
+  router-session.service
+)
+for service in "${services[@]}"; do
+  systemctl is-active --quiet "$service" || {
+    systemctl --no-pager --full status "$service" || true
+    die "$service did not start successfully. Check: journalctl -u $service -n 100 --no-pager"
+  }
+done
+
+for port in 3000 8000; do
+  for attempt in $(seq 1 20); do
+    if (echo > "/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then break; fi
+    [[ "$attempt" == 20 ]] && die "Nothing is listening on port ${port}."
+    sleep 1
+  done
+done
+
+api_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8000/api/v1/acs-servers || true)"
+[[ "$api_status" == "401" || "$api_status" == "403" ]] || die "Laravel API health check failed with HTTP ${api_status:-000}."
+curl -fsS --max-time 10 http://127.0.0.1:3000/ >/dev/null || die "Frontend health check failed."
+
+SERVER_IP="$(hostname -I | awk '{print $1}')"
+
 cat <<EOF
 
 Installation completed.
 Use: sudo systemctl --failed
-Frontend: http://$(hostname -I | awk '{print $1}'):3000
-API:      http://$(hostname -I | awk '{print $1}'):8000
+Frontend: http://${SERVER_IP}:3000
+API:      http://${SERVER_IP}:8000
+Nginx:    http://${SERVER_IP}:80
 EOF

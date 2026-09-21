@@ -143,7 +143,6 @@ check "Super-admin account configured"
 log "Checking application services"
 services=(
   noc-billing-api.service
-  noc-billing-vite.service
   noc-billing-queue.service
   olt-session.service
   bng-session.service
@@ -156,7 +155,7 @@ for service in "${services[@]}"; do
   }
 done
 
-for port in 3000 8000; do
+for port in 80 3000 8000; do
   for attempt in $(seq 1 20); do
     if (echo > "/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then break; fi
     [[ "$attempt" == 20 ]] && die "Nothing is listening on port ${port}."

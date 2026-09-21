@@ -153,7 +153,8 @@ EOF
 
 chown -R www-data:www-data "${BACKEND}/storage" "${BACKEND}/bootstrap/cache"
 systemctl daemon-reload
-systemctl enable --now olt-session.service bng-session.service router-session.service noc-billing-queue.service noc-billing-api.service noc-billing-vite.service
+systemctl disable --now noc-billing-vite.service 2>/dev/null || true
+systemctl enable --now olt-session.service bng-session.service router-session.service noc-billing-queue.service noc-billing-api.service
 
 log "Validating services"
 systemctl --no-pager --full --failed || true
@@ -174,7 +175,7 @@ Session services:
   router-session.service
 Queue:       noc-billing-queue.service
 API:         noc-billing-api.service (port 8000, five workers)
-Frontend:    noc-billing-vite.service (port 3000)
+Frontend:    Nginx (ports 80 and 3000)
 
 Before exposing the system, review ${BACKEND}/.env and set APP_ENV=production,
 APP_DEBUG=false, database credentials, mail settings, and trusted application URL.

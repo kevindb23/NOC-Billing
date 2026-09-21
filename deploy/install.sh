@@ -132,7 +132,7 @@ EOF
 
 cat > /etc/systemd/system/noc-billing-vite.service <<EOF
 [Unit]
-Description=Northstar ISP Billing Vite frontend development server
+Description=Northstar ISP Billing frontend server
 After=network.target
 
 [Service]
@@ -140,8 +140,8 @@ Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=${FRONTEND}
-Environment=NODE_ENV=development
-ExecStart=/usr/bin/npm run dev -- --host 0.0.0.0 --port 3000 --force
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run preview -- --host 0.0.0.0 --port 3000
 Restart=always
 RestartSec=5
 KillSignal=SIGTERM

@@ -87,11 +87,12 @@ This is the recommended from-scratch installation for Ubuntu 22.04/24.04 LTS. It
 
 ```bash
 sudo apt update
-sudo apt install -y git curl ca-certificates
+sudo apt install -y git curl ca-certificates mysql-server
 sudo mkdir -p /var/www/html
 sudo git clone https://github.com/kevindb23/NOC-Billing.git /var/www/html
 cd /var/www/html
 sudo git checkout v1.0.2
+test -f deploy/noc-billing-empty.sql
 ```
 
 ### 2. Create MySQL and import the empty starter database
@@ -103,7 +104,10 @@ sudo mysql <<'SQL'
 CREATE DATABASE IF NOT EXISTS noc_billing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS 'noc_billing'@'localhost' IDENTIFIED BY 'CHANGE_ME_DATABASE_PASSWORD';
 ALTER USER 'noc_billing'@'localhost' IDENTIFIED BY 'CHANGE_ME_DATABASE_PASSWORD';
+CREATE USER IF NOT EXISTS 'noc_billing'@'%' IDENTIFIED BY 'CHANGE_ME_DATABASE_PASSWORD';
+ALTER USER 'noc_billing'@'%' IDENTIFIED BY 'CHANGE_ME_DATABASE_PASSWORD';
 GRANT ALL PRIVILEGES ON noc_billing.* TO 'noc_billing'@'localhost';
+GRANT ALL PRIVILEGES ON noc_billing.* TO 'noc_billing'@'%';
 FLUSH PRIVILEGES;
 SQL
 sudo mysql noc_billing < deploy/noc-billing-empty.sql

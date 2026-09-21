@@ -10,6 +10,7 @@ BRANCH="${BRANCH:-main}"
 PHP_VERSION="${PHP_VERSION:-}"
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo; echo "==> $*"; }
+check() { echo "[OK] $*"; }
 [[ "$(id -u)" == 0 ]] || die "Run as root."
 
 export DEBIAN_FRONTEND=noninteractive
@@ -39,6 +40,19 @@ node_major="$(node -p 'process.versions.node.split(".")[0]')"
 [[ "${node_major}" -ge 20 ]] || die "Node.js 20 or newer is required; found $(node --version)."
 systemctl enable --now mysql redis-server "php${PHP_VERSION}-fpm" nginx
 
+echo
+echo "Northstar first-install setup wizard"
+read -r -p "Database name [noc_billing]: " DB_NAME; DB_NAME="${DB_NAME:-noc_billing}"
+read -r -p "Database user [noc_billing]: " DB_USER; DB_USER="${DB_USER:-noc_billing}"
+read -r -p "Database host [127.0.0.1]: " DB_HOST; DB_HOST="${DB_HOST:-127.0.0.1}"
+read -r -s -p "Database password: " DB_PASSWORD; echo
+[[ -n "${DB_PASSWORD}" ]] || die "Database password cannot be empty."
+read -r -p "Super-admin name [Billing Administrator]: " ADMIN_NAME; ADMIN_NAME="${ADMIN_NAME:-Billing Administrator}"
+read -r -p "Super-admin email [admin@example.com]: " ADMIN_EMAIL; ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+read -r -s -p "Super-admin password: " ADMIN_PASSWORD; echo
+read -r -s -p "Confirm super-admin password: " ADMIN_PASSWORD_CONFIRM; echo
+[[ -n "${ADMIN_PASSWORD}" && "${ADMIN_PASSWORD}" == "${ADMIN_PASSWORD_CONFIRM}" ]] || die "Super-admin password is empty or does not match."
+
 log "Checking out the application"
 if [[ -d "${APP_ROOT}/.git" ]]; then
   git -C "${APP_ROOT}" fetch origin
@@ -59,28 +73,33 @@ if [[ ! -f "${APP_ROOT}/backend/artisan" || ! -f "${APP_ROOT}/frontend/package.j
 fi
 [[ -f "${APP_ROOT}/deploy/noc-billing-empty.sql" ]] || die "Sanitized database dump is missing."
 
-read -r -s -p "MySQL password for noc_billing: " DB_PASSWORD
-echo
-[[ -n "${DB_PASSWORD}" ]] || die "Database password cannot be empty."
 DB_SQL_PASSWORD="$(printf '%s' "${DB_PASSWORD}" | sed "s/'/''/g")"
+DB_SQL_NAME="$(printf '%s' "${DB_NAME}" | sed 's/[^A-Za-z0-9_]/_/g')"
+DB_SQL_USER="$(printf '%s' "${DB_USER}" | sed "s/'/''/g")"
 
 log "Creating database and users"
 mysql <<SQL
-CREATE DATABASE IF NOT EXISTS noc_billing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'noc_billing'@'localhost' IDENTIFIED BY '${DB_SQL_PASSWORD}';
-ALTER USER 'noc_billing'@'localhost' IDENTIFIED BY '${DB_SQL_PASSWORD}';
-CREATE USER IF NOT EXISTS 'noc_billing'@'%' IDENTIFIED BY '${DB_SQL_PASSWORD}';
-ALTER USER 'noc_billing'@'%' IDENTIFIED BY '${DB_SQL_PASSWORD}';
-GRANT ALL PRIVILEGES ON noc_billing.* TO 'noc_billing'@'localhost';
-GRANT ALL PRIVILEGES ON noc_billing.* TO 'noc_billing'@'%';
+CREATE DATABASE IF NOT EXISTS \`${DB_SQL_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_SQL_USER}'@'localhost' IDENTIFIED BY '${DB_SQL_PASSWORD}';
+ALTER USER '${DB_SQL_USER}'@'localhost' IDENTIFIED BY '${DB_SQL_PASSWORD}';
+CREATE USER IF NOT EXISTS '${DB_SQL_USER}'@'%' IDENTIFIED BY '${DB_SQL_PASSWORD}';
+ALTER USER '${DB_SQL_USER}'@'%' IDENTIFIED BY '${DB_SQL_PASSWORD}';
+GRANT ALL PRIVILEGES ON \`${DB_SQL_NAME}\`.* TO '${DB_SQL_USER}'@'localhost';
+GRANT ALL PRIVILEGES ON \`${DB_SQL_NAME}\`.* TO '${DB_SQL_USER}'@'%';
 FLUSH PRIVILEGES;
 SQL
 
-if ! mysql -NBe "SELECT 1 FROM information_schema.tables WHERE table_schema='noc_billing' AND table_name='migrations' LIMIT 1" | grep -q 1; then
-  mysql noc_billing < "${APP_ROOT}/deploy/noc-billing-empty.sql"
+if ! mysql -NBe "SELECT 1 FROM information_schema.tables WHERE table_schema='${DB_SQL_NAME}' AND table_name='migrations' LIMIT 1" | grep -q 1; then
+  mysql "${DB_NAME}" < "${APP_ROOT}/deploy/noc-billing-empty.sql"
+  check "Imported empty database"
 else
   echo "Database already has a migrations table; preserving existing data."
+  check "Existing database preserved"
 fi
+for table in migrations permissions roles role_permissions role_assignments users; do
+  mysql -NBe "SELECT COUNT(*) FROM \`${DB_SQL_NAME}\`.\`${table}\`" >/dev/null
+  check "Verified ${table}"
+done
 
 log "Writing Laravel environment"
 cd "${APP_ROOT}/backend"
@@ -94,17 +113,31 @@ set_env() {
 }
 set_env APP_ENV production
 set_env APP_DEBUG false
-set_env DB_DATABASE noc_billing
-set_env DB_USERNAME noc_billing
+set_env DB_HOST "$DB_HOST"
+set_env DB_DATABASE "$DB_NAME"
+set_env DB_USERNAME "$DB_USER"
 set_env DB_PASSWORD "$DB_PASSWORD"
 set_env CACHE_DRIVER redis
 set_env SESSION_DRIVER redis
 set_env QUEUE_CONNECTION redis
 set_env REDIS_HOST 127.0.0.1
 set_env REDIS_PORT 6379
+set_env SEED_ADMIN_NAME "$ADMIN_NAME"
+set_env SEED_ADMIN_EMAIL "$ADMIN_EMAIL"
+set_env SEED_ADMIN_PASSWORD "$ADMIN_PASSWORD"
 
 chmod +x "${APP_ROOT}/deploy/install.sh"
 "${APP_ROOT}/deploy/install.sh"
+
+log "Applying super-admin account"
+ADMIN_HASH="$(php -r 'echo password_hash($argv[1], PASSWORD_BCRYPT);' "${ADMIN_PASSWORD}")"
+ADMIN_SQL_NAME="$(printf '%s' "${ADMIN_NAME}" | sed "s/'/''/g")"
+ADMIN_SQL_EMAIL="$(printf '%s' "${ADMIN_EMAIL}" | sed "s/'/''/g")"
+ADMIN_SQL_HASH="$(printf '%s' "${ADMIN_HASH}" | sed "s/'/''/g")"
+mysql "${DB_NAME}" <<SQL
+UPDATE users SET name='${ADMIN_SQL_NAME}', email='${ADMIN_SQL_EMAIL}', password='${ADMIN_SQL_HASH}', status='active' WHERE id=1;
+SQL
+check "Super-admin account configured"
 
 log "Checking application services"
 services=(

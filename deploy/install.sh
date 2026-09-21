@@ -65,6 +65,9 @@ fi
 log "Building frontend"
 cd "${FRONTEND}"
 npm ci
+# Vite's optimized dependency cache is tied to the installed lockfile. Remove
+# stale optimized modules after npm ci so browsers do not receive 504 responses.
+rm -rf "${FRONTEND}/node_modules/.vite" "${FRONTEND}/node_modules/.vite-temp"
 install -d -o www-data -g www-data -m 0775 "${FRONTEND}/node_modules/.vite-temp"
 npm run build
 
@@ -138,7 +141,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=${FRONTEND}
 Environment=NODE_ENV=development
-ExecStart=/usr/bin/npm run dev -- --host 0.0.0.0 --port 3000
+ExecStart=/usr/bin/npm run dev -- --host 0.0.0.0 --port 3000 --force
 Restart=always
 RestartSec=5
 KillSignal=SIGTERM

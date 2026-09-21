@@ -2,7 +2,7 @@
 
 ## Goal
 
-Migrate the Activation page from the React frontend to a Laravel-rendered Blade/Livewire page while retaining Vite for JavaScript and CSS asset building. The existing database, authentication, permissions, activation services, ACS integration, and network automation remain the source of truth.
+Migrate the Activation page from the React frontend to a Laravel-rendered Blade/Livewire page and move production delivery to Nginx and PHP-FPM without Vite or a Node runtime. The existing database, authentication, permissions, activation services, ACS integration, and network automation remain the source of truth.
 
 ## Scope
 
@@ -20,7 +20,7 @@ ONT, ACS, OLT, BNG, billing, and administration pages remain on the current fron
 
 ## Architecture
 
-Laravel owns page rendering, authorization, validation, queries, and mutations. Blade provides the page shell and Livewire provides server-backed interaction for tables, forms, previews, and action feedback. Alpine.js handles only local UI behavior such as modal visibility and small form presentation state. Vite remains a build tool for the compiled JavaScript and CSS; it is not run as a production web server.
+Laravel owns page rendering, authorization, validation, queries, and mutations. Blade provides the page shell and Livewire provides server-backed interaction for tables, forms, previews, and action feedback. Alpine.js handles only local UI behavior such as modal visibility and small form presentation state. Nginx serves Laravel through PHP-FPM and serves only committed/static public assets; no Node, Vite, or frontend development server is required in production.
 
 The existing `ActivationController` and domain services will be reused where their contracts are appropriate. Any page-specific Livewire actions will call application services or controller-level request validation rather than duplicating OLT, ACS, RADIUS, or subscriber provisioning logic.
 
@@ -63,11 +63,11 @@ The existing `ActivationController` and domain services will be reused where the
 - Feature tests cover authenticated access, permission denial, paginated history, empty state data, validation failures, preview, creation, deactivation, and deletion.
 - Livewire/component tests cover form state, validation display, loading/error state transitions, and action confirmation behavior.
 - Existing activation service and API tests remain green.
-- The frontend build remains green because Vite continues to compile the shared asset entrypoints.
+- Laravel feature and Livewire tests remain green without a Node or Vite build step.
 
 ## Out of scope
 
 - Rewriting the ACS, ONT, OLT, BNG, billing, or administration pages.
-- Removing React or TypeScript from the repository.
-- Removing Node.js from build tooling.
+- Removing React or TypeScript before the migrated pages have functional parity.
+- Keeping Node.js or Vite as a production dependency.
 - Changing the activation database schema unless an existing query is proven insufficient and the change is separately approved.

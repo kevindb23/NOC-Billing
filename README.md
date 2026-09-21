@@ -1,6 +1,6 @@
 # Northstar ISP Billing
 
-The first milestone of ISP-in-a-Box: a tenant-safe billing and operations portal built around [`MASTER.md`](MASTER.md) and [`docs/DATABASE-DESIGN.md`](docs/DATABASE-DESIGN.md).
+Northstar is a Laravel 10 API and React/Vite operations portal for ISP billing, subscriber activation, OLT/ONT, BNG, router, RADIUS, and GenieACS workflows.
 
 ## Stack
 
@@ -10,7 +10,7 @@ The first milestone of ISP-in-a-Box: a tenant-safe billing and operations portal
 - React / TypeScript / Vite / Tailwind CSS
 - Nginx + PHP-FPM for production
 
-Network automation, FreeRADIUS, BNG, OLT/ONU, ACS, IPAM, and provisioning are intentionally outside this first billing milestone.
+Network automation services are included as systemd-managed OLT, BNG, router, and queue workers.
 
 ## Local setup
 
@@ -78,3 +78,157 @@ cd /var/www/html/frontend && npm test && npm run lint && npm run build
 ```
 
 Production should use Nginx and PHP-FPM, not `php artisan serve` or `npm run dev`. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`docs/UNINSTALL.md`](docs/UNINSTALL.md).
+
+## Complete Ubuntu installation
+
+This is the recommended from-scratch installation for Ubuntu 22.04/24.04 LTS. It assumes the application will live at `/var/www/html`.
+
+### 1. Download the repository
+
+```bash
+sudo apt update
+sudo apt install -y git curl ca-certificates
+sudo mkdir -p /var/www/html
+sudo git clone https://github.com/kevindb23/NOC-Billing.git /var/www/html
+cd /var/www/html
+sudo git checkout v1.0.2
+```
+
+### 2. Create MySQL and import the empty starter database
+
+Replace the password placeholder with a strong password before running this command:
+
+```bash
+sudo mysql <<'SQL'
+CREATE DATABASE IF NOT EXISTS noc_billing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'noc_billing'@'localhost' IDENTIFIED BY 'CHANGE_ME_DATABASE_PASSWORD';
+ALTER USER 'noc_billing'@'localhost' IDENTIFIED BY 'CHANGE_ME_DATABASE_PASSWORD';
+GRANT ALL PRIVILEGES ON noc_billing.* TO 'noc_billing'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+sudo mysql noc_billing < deploy/noc-billing-empty.sql
+```
+
+`deploy/noc-billing-empty.sql` contains the current schema, migration history, permissions, the Administrator role, and one administrator user. It contains no customer, billing, network, device, token, or operational records. The included login is `admin@example.com`; its password is stored only as a hash and must be reset immediately after first login.
+
+### 3. Configure Laravel
+
+```bash
+cd /var/www/html/backend
+cp .env.example .env
+nano .env
+```
+
+Set at least:
+
+```dotenv
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=http://YOUR_SERVER_IP
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=noc_billing
+DB_USERNAME=noc_billing
+DB_PASSWORD=YOUR_DATABASE_PASSWORD
+CACHE_DRIVER=redis
+SESSION_DRIVER=redis
+QUEUE_CONNECTION=redis
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+SEED_ADMIN_EMAIL=admin@example.com
+SEED_ADMIN_PASSWORD=CHANGE_THIS_PASSWORD
+```
+
+Never commit `.env`, passwords, private keys, device credentials, or API tokens.
+
+### 4. Run the installer
+
+The installer installs PHP/Composer, Node, Python/Netmiko, MySQL, Redis, Nginx, PHP-FPM, frontend dependencies, backend dependencies, and all application services. It does not replace `.env` or delete database records.
+
+```bash
+cd /var/www/html
+sudo chmod +x deploy/install.sh
+sudo ./deploy/install.sh
+```
+
+### 5. Services
+
+The installer creates and enables:
+
+```text
+noc-billing-api.service       Laravel API on port 8000, five workers
+noc-billing-vite.service      Vite frontend on port 3000
+noc-billing-queue.service     Laravel Redis queue worker
+olt-session.service           Persistent OLT/Netmiko sessions
+bng-session.service           Persistent BNG sessions
+router-session.service        Persistent router sessions
+nginx.service                 Frontend and reverse proxy
+php8.1-fpm.service             Laravel FastCGI runtime
+redis-server.service           Cache, sessions, and queues
+mysql.service                 Database
+```
+
+Verify them:
+
+```bash
+sudo systemctl --failed
+sudo systemctl status noc-billing-api noc-billing-vite noc-billing-queue
+sudo systemctl status olt-session bng-session router-session
+sudo ss -ltnp | grep -E ':3000|:8000|:80'
+```
+
+Do not run `php artisan serve` or `npm run dev` manually after enabling these services. Manual processes can occupy ports 8000/3000 and cause proxy errors.
+
+### 6. Open and configure the system
+
+For setup and development:
+
+```text
+Frontend: http://YOUR_SERVER_IP:3000
+API:      http://YOUR_SERVER_IP:8000
+```
+
+For production, serve `frontend/dist` through Nginx on port 80/443. The installer builds the frontend and installs `deploy/nginx-noc-billing.conf`. Update its `server_name`, then run `sudo nginx -t && sudo systemctl reload nginx`.
+
+After login, configure OLT endpoints and credentials, VLAN/QinQ/TR-069 profiles, BNG interfaces and RADIUS, router sessions, ACS/GenieACS credentials, and subscriber PPP credentials. The installer intentionally provides no device credentials.
+
+### Logs and troubleshooting
+
+```bash
+sudo journalctl -u noc-billing-api -f
+sudo journalctl -u noc-billing-vite -f
+sudo tail -f /var/www/html/backend/storage/logs/laravel.log
+sudo journalctl -u olt-session -f
+sudo journalctl -u bng-session -f
+sudo journalctl -u router-session -f
+```
+
+If Vite reports `ECONNREFUSED 127.0.0.1:8000`, run `sudo systemctl restart noc-billing-api`. If a port is occupied, identify the process first with `sudo ss -ltnp 'sport = :8000'` or `sudo ss -ltnp 'sport = :3000'`.
+
+Laravel runtime permissions can be repaired with:
+
+```bash
+sudo chown -R www-data:www-data backend/storage backend/bootstrap/cache
+sudo chmod -R u+rwX,g+rwX backend/storage backend/bootstrap/cache
+```
+
+### Backup and update
+
+```bash
+sudo mysqldump --single-transaction --routines --triggers noc_billing > /root/noc_billing-$(date +%F).sql
+sudo cp backend/.env /root/noc_billing.env-$(date +%F)
+git fetch --tags origin
+sudo git checkout v1.0.2
+sudo ./deploy/install.sh
+sudo systemctl restart noc-billing-api noc-billing-vite noc-billing-queue
+```
+
+### Security
+
+- Change the initial administrator password immediately.
+- Keep `APP_DEBUG=false` outside development.
+- Use HTTPS and firewall ports 3000 and 8000 when production traffic is served by Nginx.
+- Keep `.env` and live database dumps out of Git.
+- Use separate credentials for MySQL, OLTs, BNGs, routers, RADIUS, and GenieACS.
+- The sanitized SQL dump contains an administrator password hash, never a plaintext password.

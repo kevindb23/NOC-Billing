@@ -27,6 +27,14 @@ elif [[ -z "$(find "${APP_ROOT}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/nul
 else
   die "${APP_ROOT} is not empty and is not a Git checkout. Move it aside or set APP_ROOT."
 fi
+
+# A previous detached checkout may have retained Git metadata while leaving
+# tracked files deleted in the worktree. Restore only when required files are
+# missing; otherwise preserve the existing checkout and local configuration.
+if [[ ! -f "${APP_ROOT}/backend/artisan" || ! -f "${APP_ROOT}/frontend/package.json" ]]; then
+  log "Restoring incomplete working tree from origin/${BRANCH}"
+  git -C "${APP_ROOT}" restore --source "origin/${BRANCH}" --worktree --staged .
+fi
 [[ -f "${APP_ROOT}/deploy/noc-billing-empty.sql" ]] || die "Sanitized database dump is missing."
 
 read -r -s -p "MySQL password for noc_billing: " DB_PASSWORD

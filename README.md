@@ -91,7 +91,7 @@ sudo apt install -y git curl ca-certificates mysql-server
 sudo mkdir -p /var/www/html
 sudo git clone https://github.com/kevindb23/NOC-Billing.git /var/www/html
 cd /var/www/html
-sudo git checkout v1.0.2
+sudo git switch main
 test -f deploy/noc-billing-empty.sql
 ```
 
@@ -226,6 +226,25 @@ git fetch --tags origin
 sudo git checkout v1.0.2
 sudo ./deploy/install.sh
 sudo systemctl restart noc-billing-api noc-billing-vite noc-billing-queue
+```
+
+### One-command bootstrap
+
+On a completely empty Ubuntu server, the bootstrap script can perform the repository checkout, MySQL installation, database creation/import, Laravel environment setup, and full installer run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kevindb23/NOC-Billing/main/deploy/bootstrap-ubuntu.sh | sudo bash
+```
+
+It prompts for the database password and preserves an existing Git checkout/database. To install somewhere else, set `APP_ROOT` before running it.
+
+If an older checkout is detached, repair it before pulling:
+
+```bash
+cd /var/www/html
+sudo git fetch origin
+sudo git switch main
+sudo git pull --ff-only origin main
 ```
 
 ### Security

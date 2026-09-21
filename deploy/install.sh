@@ -52,7 +52,7 @@ fi
 
 log "Installing Nginx site"
 install -m 0644 "${APP_ROOT}/deploy/nginx-noc-billing.conf" /etc/nginx/sites-available/noc-billing.conf
-sed -i "s#root /var/www/html/backend/public;#root ${BACKEND}/public;#; s#/run/php/php8.1-fpm.sock#/run/php/php${PHP_VERSION}-fpm.sock#" /etc/nginx/sites-available/noc-billing.conf
+sed -i "s#root /var/www/html/frontend/dist;#root ${FRONTEND}/dist;#; s#/run/php/php8.1-fpm.sock#/run/php/php${PHP_VERSION}-fpm.sock#" /etc/nginx/sites-available/noc-billing.conf
 ln -sfn /etc/nginx/sites-available/noc-billing.conf /etc/nginx/sites-enabled/noc-billing.conf
 rm -f /etc/nginx/sites-enabled/default
 nginx -t

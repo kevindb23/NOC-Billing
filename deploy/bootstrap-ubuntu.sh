@@ -44,6 +44,14 @@ systemctl enable --now mysql redis-server "php${PHP_VERSION}-fpm" nginx
 
 echo
 echo "Northstar first-install setup wizard"
+DB_NAME=""
+DB_USER=""
+DB_HOST=""
+DB_PASSWORD=""
+ADMIN_NAME=""
+ADMIN_EMAIL=""
+ADMIN_PASSWORD=""
+ADMIN_PASSWORD_CONFIRM=""
 read -r -p "Database name [noc_billing]: " DB_NAME < /dev/tty; DB_NAME="${DB_NAME:-noc_billing}"
 read -r -p "Database user [noc_billing]: " DB_USER < /dev/tty; DB_USER="${DB_USER:-noc_billing}"
 read -r -p "Database host [127.0.0.1]: " DB_HOST < /dev/tty; DB_HOST="${DB_HOST:-127.0.0.1}"

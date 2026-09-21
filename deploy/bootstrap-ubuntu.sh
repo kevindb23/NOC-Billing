@@ -28,6 +28,9 @@ apt-get install -y \
   composer
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]]; then
   log "Installing Node.js 22"
+  dpkg --configure -a || true
+  apt-get remove -y libnode-dev || true
+  apt-get -f install -y
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y nodejs
 fi

@@ -131,8 +131,15 @@ class OltManagementController extends Controller
             $values['tr069_ip_index'] = (int) ($values['tr069_ip_index'] ?? 1);
             $values['omcc_encrypt_enabled'] = (bool) ($values['omcc_encrypt_enabled'] ?? true);
         }
-        $duplicate = $olt->qinqProvisions()->where('qinq_type', $type)->when($type === 's_vlan', fn ($query) => $query->where('outer_vlan', $values['outer_vlan']))->when($type === 'c_vlan', fn ($query) => $query->where('inner_vlan', $values['inner_vlan']))->when($type === 'ont_line_profile', fn ($query) => $query->where('profile_id', $values['profile_id']))->exists();
-        if ($duplicate) return response()->json(['message' => 'This provisioning record already exists for the OLT.'], Response::HTTP_UNPROCESSABLE_ENTITY);
+        $duplicate = $olt->qinqProvisions()
+            ->where('qinq_type', $type)
+            ->where('outer_vlan', $values['outer_vlan'] ?? null)
+            ->where('inner_vlan', $values['inner_vlan'] ?? null)
+            ->when($type === 'ont_line_profile', fn ($query) => $query->orWhere(function ($query) use ($values): void {
+                $query->where('qinq_type', 'ont_line_profile')->where('profile_id', $values['profile_id']);
+            }))
+            ->exists();
+        if ($duplicate) return response()->json(['message' => 'This QinQ provisioning record already exists for the selected outer and inner VLANs.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         $result = $provisioning->createQinq($olt, $values);
         $values['status'] = $result['status']; $record = $olt->qinqProvisions()->create($values);
         $result['bng_sync'] = $vlanSync->syncQinq($olt, $record->toArray());

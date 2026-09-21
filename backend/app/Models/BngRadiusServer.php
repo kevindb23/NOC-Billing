@@ -11,13 +11,14 @@ class BngRadiusServer extends Model
     use HasPublicId;
 
     protected $table = 'bng_radius_servers';
-    protected $fillable = ['bng_id', 'name', 'server_address', 'secret', 'database_name', 'database_username', 'database_password', 'auth_port', 'accounting_port', 'status', 'notes'];
+    protected $fillable = ['bng_id', 'name', 'server_address', 'secret', 'database_name', 'database_username', 'database_password', 'sync_subscribers', 'auth_port', 'accounting_port', 'status', 'notes'];
     protected $hidden = ['secret', 'database_password'];
 
-    protected function casts(): array
-    {
-        return ['secret' => 'encrypted', 'database_password' => 'encrypted'];
-    }
+    protected $casts = [
+        'secret' => 'encrypted',
+        'database_password' => 'encrypted',
+        'sync_subscribers' => 'boolean',
+    ];
 
     public function bng(): BelongsTo
     {

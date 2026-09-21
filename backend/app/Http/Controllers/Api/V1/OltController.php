@@ -7,6 +7,7 @@ use App\Http\Requests\StoreOltRequest;
 use App\Http\Requests\TestOltConnectionRequest;
 use App\Http\Requests\UpdateOltRequest;
 use App\Models\Olt;
+use App\Models\OntSetting;
 use App\Services\OltConnectionTester;
 use App\Services\OltSessionService;
 use Illuminate\Http\JsonResponse;
@@ -54,6 +55,7 @@ class OltController extends Controller
         $values['ssh_username'] = $values['username'] ?? null;
         $values['ssh_password'] = $values['password'] ?? null;
         unset($values['username'], $values['password']);
+        $values['ont_id_capacity_per_port'] ??= (int) OntSetting::query()->firstOrCreate([], ['do_not_allow_rogue_onus' => false, 'ont_id_capacity_per_port' => 64])->ont_id_capacity_per_port;
         return response()->json(['data' => Olt::create($values)->fresh()], Response::HTTP_CREATED);
     }
 

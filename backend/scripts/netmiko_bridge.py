@@ -8,7 +8,8 @@ from typing import Any
 from netmiko import ConnectHandler
 from netmiko.exceptions import NetmikoAuthenticationException, NetmikoTimeoutException
 from paramiko.ssh_exception import SSHException
-from huawei_olt_driver import OPERATIONS as HUAWEI_OPERATIONS
+from huawei_olt_driver import OPERATIONS as HUAWEI_OPERATIONS, PREVIEW_OPERATIONS as HUAWEI_PREVIEW_OPERATIONS
+from hsgq_olt_driver import OPERATIONS as HSGQ_OPERATIONS, PREVIEW_OPERATIONS as HSGQ_PREVIEW_OPERATIONS
 
 
 def main() -> int:
@@ -16,6 +17,13 @@ def main() -> int:
         payload: dict[str, Any] = json.load(sys.stdin)
         device = payload["device"]
         operation = payload.get("operation", "test_connection")
+
+        if operation == "preview_provision":
+            previewers = HUAWEI_PREVIEW_OPERATIONS if device.get("device_type") == "huawei_olt_ssh" else HSGQ_PREVIEW_OPERATIONS if device.get("device_type") == "hsgq_olt_ssh" else {}
+            previewer = previewers.get(payload.get("provisioning"))
+            if not previewer:
+                raise ValueError("The selected OLT provisioning preview is not supported by this driver.")
+            return write_result({"ok": True, "commands": previewer(payload.get("values", {}))})
 
         connection = ConnectHandler(**device)
         try:
@@ -27,14 +35,20 @@ def main() -> int:
                 command = payload.get("command")
                 if not command:
                     raise ValueError("No command was supplied for this router operation.")
-                result["output"] = connection.send_command(command, read_timeout=device.get("timeout", 8))
+                # Linux shell commands, especially service restarts, should not depend on
+                # Netmiko guessing a hostname-specific prompt such as root@acs:~#.
+                result["output"] = connection.send_command_timing(
+                    command,
+                    last_read=1.0,
+                    read_timeout=device.get("timeout", 20),
+                )
             if operation == "config":
                 commands = payload.get("commands")
                 if not commands:
                     raise ValueError("No configuration commands were supplied.")
                 result["output"] = connection.send_config_set(commands, read_timeout=device.get("timeout", 15))
             if operation == "provision":
-                provisioner = HUAWEI_OPERATIONS.get(payload.get("provisioning")) if device.get("device_type") == "huawei_olt_ssh" else None
+                provisioner = HUAWEI_OPERATIONS.get(payload.get("provisioning")) if device.get("device_type") == "huawei_olt_ssh" else HSGQ_OPERATIONS.get(payload.get("provisioning")) if device.get("device_type") == "hsgq_olt_ssh" else None
                 if not provisioner:
                     raise ValueError("The selected OLT provisioning operation is not supported by this driver.")
                 result["output"] = provisioner(connection, payload.get("values", {}))
@@ -49,8 +63,10 @@ def main() -> int:
         return write_result({"ok": False, "message": "SSH connection failed. Verify the endpoint and that SSH is reachable."}, 1)
     except (KeyError, TypeError, ValueError) as exception:
         return write_result({"ok": False, "message": str(exception)}, 1)
-    except Exception:
-        return write_result({"ok": False, "message": "The Netmiko router operation failed."}, 1)
+    except Exception as exception:
+        detail = " ".join(str(exception).split())[:500]
+        message = f"Netmiko {type(exception).__name__}: {detail}" if detail else f"Netmiko {type(exception).__name__}."
+        return write_result({"ok": False, "message": message}, 1)
 
 
 def write_result(result: dict[str, Any], exit_code: int = 0) -> int:

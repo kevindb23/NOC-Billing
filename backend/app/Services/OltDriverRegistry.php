@@ -10,6 +10,7 @@ final class OltDriverRegistry
     {
         return match (strtolower($vendor)) {
             'huawei' => app(HuaweiOltDriver::class),
+            'hsgq' => app(HsgqOltDriver::class),
             default => throw new InvalidArgumentException("No OLT driver is registered for {$vendor}."),
         };
     }

@@ -1,5 +1,7 @@
 """Linux BNG driver for Accel-PPP configuration operations."""
 import base64
+import re
+import shlex
 import time
 
 from accel_ppp_config import parse_config, render_config
@@ -7,6 +9,110 @@ from accel_ppp_config import parse_config, render_config
 CONFIG_PATH = "/etc/accel-ppp.conf"
 IPTABLES_PATH = "/etc/iptables/rules.v4"
 DEVICE_TYPE = "linux"
+INTERFACE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+
+
+def _interface_name(value):
+    name = str(value or "").strip()
+    if not INTERFACE_PATTERN.fullmatch(name):
+        raise RuntimeError("The BNG interface name contains unsupported characters.")
+    return name
+
+
+def _vlan_id(value):
+    try:
+        vlan_id = int(value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("The VLAN ID must be an integer from 1 to 4094.") from exc
+    if vlan_id < 1 or vlan_id > 4094:
+        raise RuntimeError("The VLAN ID must be an integer from 1 to 4094.")
+    return vlan_id
+
+
+def _interface_values(values, require_vlan=True):
+    interfaces = values.get("interfaces", [])
+    if not isinstance(interfaces, list) or not interfaces:
+        raise RuntimeError("At least one BNG VLAN interface is required.")
+    result = []
+    for item in interfaces:
+        if not isinstance(item, dict):
+            raise RuntimeError("The BNG VLAN interface payload is invalid.")
+        name = _interface_name(item.get("name"))
+        parent = _interface_name(item.get("parent")) if item.get("parent") else None
+        vlan_id = _vlan_id(item.get("vlan_id")) if require_vlan else item.get("vlan_id")
+        result.append({"name": name, "parent": parent, "vlan_id": vlan_id})
+    return result
+
+
+def _netplan_key(name):
+    return name.replace(".", r"\.")
+
+
+def _interface_exists(connection, interface):
+    output = connection.send_command(f"ip -o link show {shlex.quote(interface)}", read_timeout=20)
+    return bool(re.search(rf"(?m)^\s*\d+:\s*{re.escape(interface)}(?:@|:|\s)", output or "")), output or ""
+
+
+def _netplan_interface_exists(connection, interface):
+    output = connection.send_command("netplan get network.vlans", read_timeout=20)
+    return bool(re.search(rf"(?m)^\s*{re.escape(interface)}:\s*$", output or "")), output or ""
+
+
+def ensure_vlan_interfaces(connection, values):
+    interfaces = sorted(_interface_values(values), key=lambda item: item["name"].count("."))
+    commands = []
+    for item in interfaces:
+        parent = item["parent"] or str(values.get("parent_interface", "")).strip()
+        parent = _interface_name(parent)
+        name = shlex.quote(item["name"])
+        parent_arg = shlex.quote(parent)
+        parent_netplan = ""
+        if "." not in parent:
+            parent_key = shlex.quote(f"network.ethernets.{_netplan_key(parent)}.optional=true")
+            parent_file = shlex.quote("/etc/netplan/ispbox-parent.yaml")
+            parent_netplan = (
+                "install -d -m 755 /etc/netplan && "
+                f"printf '%s\\n' 'network:' '  version: 2' '  ethernets:' '    {parent}:' '      optional: true' > {parent_file} && "
+                f"netplan set --origin-hint ispbox-parent {parent_key} && "
+            )
+        netplan = shlex.quote(f"network.vlans.{_netplan_key(item['name'])}={{id: {item['vlan_id']}, link: {parent}}}")
+        command = (
+            f"{parent_netplan}netplan set --origin-hint ispbox-network {netplan} && "
+            f"netplan generate && "
+            f"(ip link show {name} || ip link add link {parent_arg} name {name} type vlan id {item['vlan_id']}) && "
+            f"ip link set {name} up"
+        )
+        command_output = connection.send_command(command, read_timeout=20)
+        exists, verification = _interface_exists(connection, item["name"])
+        persisted, netplan_state = _netplan_interface_exists(connection, item["name"])
+        if not exists or not persisted:
+            command_detail = command_output.strip()[-400:] if command_output else "no command response"
+            verification_detail = verification.strip()[-200:] if verification else "no verification response"
+            netplan_detail = netplan_state.strip()[-300:] if netplan_state else "no Netplan response"
+            message = "persist" if exists and not persisted else "create"
+            raise RuntimeError(f"Remote BNG did not {message} VLAN interface {item['name']}. Command response: {command_detail}; verification: {verification_detail}; Netplan: {netplan_detail}")
+        commands.append(command)
+    return {"interfaces": [item["name"] for item in interfaces], "commands": commands, "verified": True}
+
+
+def remove_vlan_interfaces(connection, values):
+    interfaces = sorted(_interface_values(values, require_vlan=False), key=lambda item: item["name"].count("."), reverse=True)
+    commands = []
+    for item in interfaces:
+        name = shlex.quote(item["name"])
+        netplan = shlex.quote(f"network.vlans.{_netplan_key(item['name'])}=null")
+        command = (
+            f"netplan set --origin-hint ispbox-network {netplan} && "
+            f"netplan generate && "
+            f"(ip link delete {name} 2>/dev/null || true)"
+        )
+        connection.send_command(command, read_timeout=20)
+        exists, verification = _interface_exists(connection, item["name"])
+        if exists:
+            detail = verification.strip()[-400:] or "no response"
+            raise RuntimeError(f"Remote BNG did not remove VLAN interface {item['name']}. Remote response: {detail}")
+        commands.append(command)
+    return {"interfaces": [item["name"] for item in interfaces], "commands": commands, "verified": True}
 
 
 def _read(connection) -> str:

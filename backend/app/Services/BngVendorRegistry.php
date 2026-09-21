@@ -5,8 +5,8 @@ namespace App\Services;
 final class BngVendorRegistry
 {
     private const DRIVERS = [
-        'linux' => ['label' => 'Linux BNG driver', 'netmiko_device_type' => 'linux', 'accel_ppp' => true],
-        'mikrotik' => ['label' => 'MikroTik BNG driver', 'netmiko_device_type' => 'mikrotik_routeros', 'accel_ppp' => false],
+        'linux' => ['label' => 'Linux BNG driver', 'netmiko_device_type' => 'linux', 'accel_ppp' => true, 'vlan_sync' => true],
+        'mikrotik' => ['label' => 'MikroTik BNG driver', 'netmiko_device_type' => 'mikrotik_routeros', 'accel_ppp' => false, 'vlan_sync' => false],
     ];
 
     public static function driver(string $vendor): array

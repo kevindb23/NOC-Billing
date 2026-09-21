@@ -16,7 +16,7 @@ class StoreOltRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:190'],
-            'vendor' => ['required', 'string', Rule::in(['huawei', 'zte'])],
+            'vendor' => ['required', 'string', Rule::in(['huawei', 'zte', 'hsgq'])],
             'model' => ['nullable', 'string', 'max:100'],
             'management_endpoint' => ['nullable', 'string', 'max:190'],
             'preferred_transport' => ['required', 'string', 'in:ssh,telnet,api,netconf'],

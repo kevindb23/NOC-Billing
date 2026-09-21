@@ -15,12 +15,13 @@ describe('OltPage', () => {
     expect(screen.getByText('No OLTs found.')).toBeTruthy()
   })
 
-  it('offers Huawei and ZTE when creating an OLT', async () => {
+  it('offers Huawei, ZTE, and HSGQ when creating an OLT', async () => {
     render(<OltPage token="token" permissions={['olts.view', 'olts.create']} />)
     fireEvent.click(await screen.findByRole('button', { name: 'New OLT' }))
     expect(screen.getByRole('combobox', { name: 'Vendor' })).toBeTruthy()
     expect(screen.getAllByText('Huawei').length).toBeGreaterThan(0)
     expect(screen.getAllByText('ZTE').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('HSGQ').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Test connection' })).toBeTruthy()
   })
 })

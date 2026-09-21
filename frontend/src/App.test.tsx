@@ -10,10 +10,12 @@ vi.mock('./components/DashboardPage', () => ({ DashboardPage: () => <h1>Overview
 vi.mock('./components/UsersPage', () => ({ UsersPage: () => <h1>Users page</h1> }))
 vi.mock('./components/RolesPage', () => ({ RolesPage: () => <h1>Roles page</h1> }))
 vi.mock('./components/NetworkModulePage', () => ({ NetworkModulePage: ({ module, token, permissions, isSuperadmin }: { module: string; token?: string; permissions?: string[]; isSuperadmin?: boolean }) => <div><h1>{module} page</h1><output data-testid="network-module-props">{JSON.stringify({ module, token, permissions, isSuperadmin })}</output></div> }))
+vi.mock('./components/OnuPage', () => ({ OnuPage: () => <h1>ONU inventory page</h1> }))
 
 describe('billing application entry point', () => {
   beforeEach(() => {
     cleanup()
+    window.history.pushState({}, '', '/overview')
     localStorage.clear()
     vi.mocked(apiRequest).mockResolvedValue({ data: { permissions: [] } })
   })
@@ -72,6 +74,38 @@ describe('billing application entry point', () => {
 
     expect(screen.getByRole('heading', { name: 'Routers page' })).toBeTruthy()
     expect(screen.getByTestId('network-module-props').textContent).toContain('router-token')
+  })
+
+  it('does not redirect a deep ONT link while refreshing stored permissions', async () => {
+    window.history.pushState({}, '', '/ont/ont-1/manage')
+    vi.mocked(apiRequest).mockResolvedValue({ data: { permissions: ['onts.view'], is_superadmin: false } })
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Viewer', email: 'viewer@example.com' }, is_superadmin: false }))
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'ONT page' })).toBeTruthy()
+  })
+
+  it('opens the encoded ACS URL instead of falling back to the previously visited page', async () => {
+    window.history.pushState({}, '', '/ACS%20Server')
+    localStorage.setItem('isp-view', 'overview')
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Admin', email: 'admin@example.com' }, is_superadmin: true }))
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'ACS Server page' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Overview page' })).toBeNull()
+  })
+
+  it('places ONU under Inventory and routes to the stock page', () => {
+    localStorage.setItem('isp-session', JSON.stringify({ token: 'token', user: { name: 'Admin', email: 'admin@example.com' }, permissions: [], is_superadmin: true }))
+    localStorage.setItem('isp-expanded-sections', JSON.stringify({ Inventory: true }))
+    render(<App />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'ONU' })[0])
+
+    expect(screen.getByRole('heading', { name: 'ONU inventory page' })).toBeTruthy()
+    expect(screen.getByText('ISP billing / Inventory')).toBeTruthy()
   })
 
   it('lets a superadmin open branding without explicit permission rows', async () => {

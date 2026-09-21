@@ -67,6 +67,24 @@ class RouterCommandExecutor
         ]);
     }
 
+    /** Execute a shell command through the shared Linux SSH path. */
+    public function executeNetmikoShell(array $config, string $command): array
+    {
+        [$host, $port] = $this->endpoint((string) $config['management_endpoint']);
+        return $this->runBridge([
+            'operation' => 'command',
+            'command' => $command,
+            'device' => [
+                'device_type' => 'linux',
+                'host' => $host,
+                'port' => $port,
+                'username' => $config['username'],
+                'password' => $config['password'],
+                'timeout' => 20,
+            ],
+        ]);
+    }
+
     /** Execute vendor-specific configuration commands through the shared Netmiko bridge. */
     public function executeNetmikoConfig(array $config, string $deviceType, array $commands): array
     {
@@ -83,6 +101,12 @@ class RouterCommandExecutor
     {
         [$host, $port] = $this->endpoint((string) $config['management_endpoint']);
         return $this->runBridge(['operation' => 'provision', 'provisioning' => $operation, 'values' => $values, 'device' => ['device_type' => $deviceType, 'host' => $host, 'port' => $port, 'username' => $config['username'], 'password' => $config['password'], 'timeout' => 20]]);
+    }
+
+    /** Generate vendor-specific provisioning commands without opening an SSH session. */
+    public function previewNetmikoProvisioning(string $deviceType, string $operation, array $values): array
+    {
+        return $this->runBridge(['operation' => 'preview_provision', 'provisioning' => $operation, 'values' => $values, 'device' => ['device_type' => $deviceType]]);
     }
 
     /**

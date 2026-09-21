@@ -47,10 +47,21 @@ class BngSessionService
         return $this->provision($bng, 'save_iptables', $values);
     }
 
+    public function ensureVlanInterfaces(Bng $bng, array $interfaces): array
+    {
+        return $this->provision($bng, 'ensure_vlan_interfaces', ['parent_interface' => $bng->parent_interface, 'interfaces' => $interfaces]);
+    }
+
+    public function removeVlanInterfaces(Bng $bng, array $interfaces): array
+    {
+        return $this->provision($bng, 'remove_vlan_interfaces', ['parent_interface' => $bng->parent_interface, 'interfaces' => $interfaces]);
+    }
+
     private function provision(Bng $bng, string $operation, array $values = []): array
     {
-        if (!BngVendorRegistry::driver($bng->vendor)['accel_ppp']) {
-            throw new RuntimeException('Accel-PPP configuration is supported only by the Linux BNG driver.');
+        $capability = str_contains($operation, 'vlan_interfaces') ? 'vlan_sync' : 'accel_ppp';
+        if (!BngVendorRegistry::driver($bng->vendor)[$capability]) {
+            throw new RuntimeException($capability === 'vlan_sync' ? 'VLAN interface synchronization is supported only by the Linux BNG driver.' : 'Accel-PPP configuration is supported only by the Linux BNG driver.');
         }
 
         $payload = $this->payload($bng, 'provision');

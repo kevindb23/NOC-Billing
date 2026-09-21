@@ -15,7 +15,7 @@ class TestOltConnectionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'vendor' => ['required', 'string', Rule::in(['huawei', 'zte'])],
+            'vendor' => ['required', 'string', Rule::in(['huawei', 'zte', 'hsgq'])],
             'management_endpoint' => ['required', 'string', 'max:190'],
             'preferred_transport' => ['required', 'string', Rule::in(['ssh', 'telnet', 'api', 'netconf'])],
             'username' => ['required_if:preferred_transport,ssh', 'nullable', 'string', 'max:190'],

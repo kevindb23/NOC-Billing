@@ -19,6 +19,7 @@ use App\Models\SubscriberService;
 use App\Models\Subscription;
 use App\Models\OrganizationBillingSetting;
 use App\Services\NumberGenerator;
+use App\Services\RadiusSubscriberSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -127,7 +128,7 @@ class BillingController extends Controller
         return response()->json(['data' => SubscriberService::with(['customer', 'billingAccount'])->latest()->paginate($request->integer('per_page', 20))]);
     }
 
-    public function storeService(Request $request): JsonResponse
+    public function storeService(Request $request, RadiusSubscriberSyncService $sync): JsonResponse
     {
         $data = $request->validate([
             'customer_id' => ['required', 'string'],
@@ -142,6 +143,7 @@ class BillingController extends Controller
             'service_number' => NumberGenerator::next('subscriber_services', 'SVC-', 'subscriber_services', 'service_number'),
             'service_type' => $data['service_type'] ?? 'internet', 'status' => 'pending',
         ]);
+        $sync->syncEnabledServersForCustomer($customer);
         return response()->json(['data' => $service->load(['customer', 'billingAccount'])], 201);
     }
 
@@ -150,7 +152,7 @@ class BillingController extends Controller
         return response()->json(['data' => Subscription::with(['service.customer', 'service.billingAccount', 'planVersion.plan'])->latest()->paginate($request->integer('per_page', 20))]);
     }
 
-    public function storeSubscription(Request $request): JsonResponse
+    public function storeSubscription(Request $request, RadiusSubscriberSyncService $sync): JsonResponse
     {
         $data = $request->validate([
             'subscriber_id' => ['nullable', 'string'], 'subscriber_service_id' => ['nullable', 'string'], 'billing_account_id' => ['nullable', 'string'],
@@ -194,10 +196,11 @@ class BillingController extends Controller
             'plan_name_snapshot' => $version->plan->name,
         ]);
         $this->createInitialBillingStatement($subscription->fresh('planVersion'), $settings, $data['starts_on']);
+        $sync->syncEnabledServersForCustomer($service->customer);
         return response()->json(['data' => $subscription->load(['service', 'planVersion.plan'])], 201);
     }
 
-    public function updateSubscription(Request $request, int $id): JsonResponse
+    public function updateSubscription(Request $request, int $id, RadiusSubscriberSyncService $sync): JsonResponse
     {
         $data = $request->validate(['status' => ['sometimes', 'string', 'in:active,suspended,cancelled,ended'], 'ends_on' => ['nullable', 'date'], 'starts_on' => ['sometimes', 'date']]);
         $subscription = Subscription::findOrFail($id);
@@ -208,6 +211,7 @@ class BillingController extends Controller
             $data['billing_day'] = $cycleStartDay;
         }
         $subscription->update($data);
+        $sync->syncEnabledServersForCustomer($subscription->service->customer);
         return response()->json(['data' => $subscription->fresh()->load(['service', 'planVersion.plan'])]);
     }
 

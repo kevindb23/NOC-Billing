@@ -4,7 +4,8 @@ import json, logging, os, socket, threading, time
 from typing import Any
 from netmiko import ConnectHandler
 from huawei_olt_driver import OPERATIONS as HUAWEI_OPERATIONS
-from bng_driver_linux import read_accel_ppp_config, preview_accel_ppp_config, save_accel_ppp_config, preview_iptables, save_iptables
+from hsgq_olt_driver import OPERATIONS as HSGQ_OPERATIONS
+from bng_driver_linux import read_accel_ppp_config, preview_accel_ppp_config, save_accel_ppp_config, preview_iptables, save_iptables, ensure_vlan_interfaces, remove_vlan_interfaces
 from bng_driver_mikrotik import unsupported as mikrotik_accel_ppp_unsupported
 
 SOCKET = os.environ.get("OLT_SESSION_SOCKET", "/run/olt-session/olt-session.sock")
@@ -20,6 +21,8 @@ BNG_OPERATIONS = {
         "save_accel_ppp_config": save_accel_ppp_config,
         "preview_iptables": preview_iptables,
         "save_iptables": save_iptables,
+        "ensure_vlan_interfaces": ensure_vlan_interfaces,
+        "remove_vlan_interfaces": remove_vlan_interfaces,
     },
     "mikrotik_routeros": {
         "read_accel_ppp_config": mikrotik_accel_ppp_unsupported,
@@ -41,10 +44,10 @@ def session_loop(key: str, config: dict[str, Any]):
             session["status"] = "connecting"
         try:
             connection = ConnectHandler(**config)
-            if config.get("device_type") == "huawei_olt_ssh":
-                logger.info("entering Huawei privileged mode olt_id=%s", key)
+            if config.get("device_type") in {"huawei_olt_ssh", "hsgq_olt_ssh"}:
+                logger.info("entering privileged OLT mode olt_id=%s device_type=%s", key, config.get("device_type"))
                 connection.enable()
-                logger.info("Huawei privileged mode ready olt_id=%s", key)
+                logger.info("privileged OLT mode ready olt_id=%s", key)
             with lock:
                 if key not in sessions or not sessions[key].get("requested"):
                     connection.disconnect(); return
@@ -98,7 +101,7 @@ def handle(request: dict[str, Any]) -> dict[str, Any]:
         with lock:
             session = sessions.get(key, {})
             return {"ok": True, "status": session.get("status", "stopped"), "error": session.get("error")}
-    if action == "provision":
+    if action in {"provision", "discover"}:
         with lock:
             session = sessions.get(key, {})
             connection = session.get("connection")
@@ -109,7 +112,7 @@ def handle(request: dict[str, Any]) -> dict[str, Any]:
         if entity == "bng":
             provisioner = BNG_OPERATIONS.get(request.get("device_type"), {}).get(request.get("operation"))
         else:
-            provisioner = HUAWEI_OPERATIONS.get(request.get("operation")) if request.get("device_type") == "huawei_olt_ssh" else None
+            provisioner = HUAWEI_OPERATIONS.get(request.get("operation")) if request.get("device_type") == "huawei_olt_ssh" else HSGQ_OPERATIONS.get(request.get("operation")) if request.get("device_type") == "hsgq_olt_ssh" else None
         if not provisioner:
             return {"ok": False, "message": "The selected device provisioning operation is not supported."}
         try:
@@ -117,12 +120,12 @@ def handle(request: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(values, dict):
                 values = {}
             safe_values = {name: ("***" if "secret" in name or name == "password" else value) for name, value in values.items()}
-            logger.info("provision started entity=%s id=%s operation=%s values=%s", entity, key, request.get("operation"), safe_values)
+            logger.info("device operation started entity=%s id=%s operation=%s values=%s", entity, key, request.get("operation"), safe_values)
             output = provisioner(connection, request.get("values", {}))
             if entity == "bng":
-                logger.info("provision completed entity=%s id=%s operation=%s path=%s backup=%s", entity, key, request.get("operation"), output.get("path"), output.get("backup"))
+                logger.info("provision completed entity=%s id=%s operation=%s interfaces=%s verified=%s path=%s backup=%s", entity, key, request.get("operation"), output.get("interfaces"), output.get("verified"), output.get("path"), output.get("backup"))
             else:
-                logger.info("provision completed entity=%s id=%s operation=%s output=%s", entity, key, request.get("operation"), output)
+                logger.info("device operation completed entity=%s id=%s operation=%s output=%s", entity, key, request.get("operation"), output)
             return {"ok": True, "output": output}
         except Exception as exc:
             logger.exception("provision failed olt_id=%s operation=%s", key, request.get("operation"))

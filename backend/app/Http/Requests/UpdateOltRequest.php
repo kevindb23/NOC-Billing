@@ -16,7 +16,7 @@ class UpdateOltRequest extends FormRequest
     {
         return [
             'name' => ['sometimes', 'string', 'max:190'],
-            'vendor' => ['sometimes', 'string', Rule::in(['huawei', 'zte'])],
+            'vendor' => ['sometimes', 'string', Rule::in(['huawei', 'zte', 'hsgq'])],
             'model' => ['nullable', 'string', 'max:100'],
             'management_endpoint' => ['nullable', 'string', 'max:190'],
             'preferred_transport' => ['sometimes', 'string', 'in:ssh,telnet,api,netconf'],

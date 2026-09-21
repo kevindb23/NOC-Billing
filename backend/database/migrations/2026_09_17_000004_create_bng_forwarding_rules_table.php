@@ -8,8 +8,10 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        DB::statement('ALTER TABLE bng_cgnat_policies MODIFY subscriber_interface VARCHAR(255) NULL');
-        DB::statement('ALTER TABLE bng_cgnat_policies MODIFY internet_interface VARCHAR(255) NULL');
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            DB::statement('ALTER TABLE bng_cgnat_policies MODIFY subscriber_interface VARCHAR(255) NULL');
+            DB::statement('ALTER TABLE bng_cgnat_policies MODIFY internet_interface VARCHAR(255) NULL');
+        }
 
         Schema::create('bng_forwarding_rules', function (Blueprint $table): void {
             $table->id();
@@ -27,9 +29,11 @@ return new class extends Migration {
     public function down(): void
     {
         Schema::dropIfExists('bng_forwarding_rules');
-        DB::statement("UPDATE bng_cgnat_policies SET subscriber_interface = '' WHERE subscriber_interface IS NULL");
-        DB::statement("UPDATE bng_cgnat_policies SET internet_interface = '' WHERE internet_interface IS NULL");
-        DB::statement('ALTER TABLE bng_cgnat_policies MODIFY subscriber_interface VARCHAR(255) NOT NULL');
-        DB::statement('ALTER TABLE bng_cgnat_policies MODIFY internet_interface VARCHAR(255) NOT NULL');
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            DB::statement("UPDATE bng_cgnat_policies SET subscriber_interface = '' WHERE subscriber_interface IS NULL");
+            DB::statement("UPDATE bng_cgnat_policies SET internet_interface = '' WHERE internet_interface IS NULL");
+            DB::statement('ALTER TABLE bng_cgnat_policies MODIFY subscriber_interface VARCHAR(255) NOT NULL');
+            DB::statement('ALTER TABLE bng_cgnat_policies MODIFY internet_interface VARCHAR(255) NOT NULL');
+        }
     }
 };

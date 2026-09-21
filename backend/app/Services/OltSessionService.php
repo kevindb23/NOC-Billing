@@ -11,7 +11,9 @@ class OltSessionService
     public function start(Olt $olt): array { return $this->send($this->payload($olt, 'start')); }
     public function stop(Olt $olt): array { return $this->send(['action' => 'stop', 'olt_id' => $olt->public_id]); }
     public function status(Olt $olt): array { return $this->send(['action' => 'status', 'olt_id' => $olt->public_id]); }
-    public function provision(Olt $olt, string $operation, array $values): array { Log::info('OLT session operation requested', ['olt_id' => $olt->public_id, 'operation' => $operation, 'values' => $values]); $result = $this->send(['action' => 'provision', 'olt_id' => $olt->public_id, 'device_type' => OltDriverRegistry::driver($olt->vendor)->deviceType(), 'operation' => $operation, 'values' => $values]); Log::info('OLT session operation completed', ['olt_id' => $olt->public_id, 'operation' => $operation, 'result' => $result]); return $result; }
+    public function discover(Olt $olt): array { return $this->send(['action' => 'discover', 'olt_id' => $olt->public_id, 'device_type' => OltDriverRegistry::driver($olt->vendor)->deviceType(), 'operation' => 'discover_onts']); }
+    public function provision(Olt $olt, string $operation, array $values): array { $safeValues = $values; if (array_key_exists('password', $safeValues)) $safeValues['password'] = '[redacted]'; Log::info('OLT session operation requested', ['olt_id' => $olt->public_id, 'operation' => $operation, 'values' => $safeValues]); $result = $this->send(['action' => 'provision', 'olt_id' => $olt->public_id, 'device_type' => OltDriverRegistry::driver($olt->vendor)->deviceType(), 'operation' => $operation, 'values' => $values]); Log::info('OLT session operation completed', ['olt_id' => $olt->public_id, 'operation' => $operation, 'result' => $result]); return $result; }
+    public function previewProvision(Olt $olt, string $operation, array $values): array { return app(RouterCommandExecutor::class)->previewNetmikoProvisioning(OltDriverRegistry::driver($olt->vendor)->deviceType(), $operation, $values); }
 
     private function payload(Olt $olt, string $action): array
     {

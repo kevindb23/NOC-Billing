@@ -14,7 +14,7 @@ class OltConnectionTester
     public function test(array $config): array
     {
         if ($config['preferred_transport'] === 'ssh') {
-            $deviceType = ['huawei' => 'huawei_olt_ssh', 'zte' => 'zte_zxros_ssh'][$config['vendor'] ?? ''] ?? null;
+            $deviceType = ['huawei' => 'huawei_olt_ssh', 'hsgq' => 'hsgq_olt_ssh', 'zte' => 'zte_zxros_ssh'][$config['vendor'] ?? ''] ?? null;
             if ($deviceType === null) {
                 throw new RuntimeException('The selected OLT vendor is not supported for Netmiko SSH.');
             }

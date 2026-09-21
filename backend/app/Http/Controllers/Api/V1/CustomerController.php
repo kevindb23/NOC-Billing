@@ -8,6 +8,7 @@ use App\Models\BillingAccount;
 use App\Models\Customer;
 use App\Models\SubscriberService;
 use App\Services\NumberGenerator;
+use App\Services\RadiusSubscriberSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,12 +16,13 @@ use Illuminate\Support\Facades\Schema;
 
 class CustomerController extends Controller
 {
-    public function store(StoreCustomerRequest $request): JsonResponse
+    public function store(StoreCustomerRequest $request, RadiusSubscriberSyncService $sync): JsonResponse
     {
         $customer = Customer::create([
             ...$request->validated(),
             'customer_number' => $this->nextCustomerNumber(),
         ]);
+        $sync->syncEnabledServersForCustomer($customer);
 
         return response()->json(['data' => $customer->fresh(), 'correlation_id' => $request->header('X-Request-Id')], 201);
     }
@@ -44,7 +46,7 @@ class CustomerController extends Controller
         return response()->json(['data' => $this->customer($request, $publicId)->load(['billingAccounts', 'subscriberServices'])]);
     }
 
-    public function update(Request $request, string $publicId): JsonResponse
+    public function update(Request $request, string $publicId, RadiusSubscriberSyncService $sync): JsonResponse
     {
         $customer = $this->customer($request, $publicId);
         $values = $request->validate([
@@ -58,6 +60,12 @@ class CustomerController extends Controller
         ]);
         foreach (['portal_password', 'ppp_password'] as $key) if (array_key_exists($key, $values) && blank($values[$key])) unset($values[$key]);
         $customer->update($values);
+        if ($customer->status === 'active' && filled($customer->ppp_username)) {
+            $customer->subscriberServices()
+                ->where('status', 'pending')
+                ->update(['status' => 'active', 'activated_at' => now()]);
+        }
+        $sync->syncEnabledServersForCustomer($customer);
         return response()->json(['data' => $customer->fresh()]);
     }
 

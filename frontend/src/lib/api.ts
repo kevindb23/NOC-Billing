@@ -53,7 +53,9 @@ async function requestApi<T>(path: string, options: RequestInit = {}, token?: st
   }
   if (isMutation) dispatchCrudOperation('start', detail)
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 15000)
+  const isProvisioningRequest = path.includes('/activations') || path.includes('/qinq') || path.includes('/vlans')
+  const timeoutMs = isProvisioningRequest ? 120000 : 15000
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,

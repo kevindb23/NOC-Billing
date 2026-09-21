@@ -1,0 +1,18 @@
+[Unit]
+Description=Northstar ISP Billing Vite frontend development server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/html/frontend
+Environment=NODE_ENV=development
+ExecStart=/usr/bin/npm run dev -- --host 0.0.0.0 --port 3000
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

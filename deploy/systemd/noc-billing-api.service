@@ -1,0 +1,20 @@
+[Unit]
+Description=Northstar ISP Billing Laravel API
+After=network.target mysql.service redis-server.service
+Wants=mysql.service redis-server.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/html/backend
+Environment=APP_ENV=production
+Environment=PHP_CLI_SERVER_WORKERS=5
+ExecStart=/usr/bin/php /var/www/html/backend/artisan serve --host=0.0.0.0 --port=8000
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

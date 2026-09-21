@@ -29,18 +29,6 @@ apt-get install -y \
   php${PHP_VERSION}-curl php${PHP_VERSION}-mbstring php${PHP_VERSION}-zip \
   composer
 
-if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]]; then
-  log "Installing Node.js 22"
-  dpkg --configure -a || true
-  dpkg --purge --force-depends libnode-dev || true
-  apt-get remove -y libnode-dev || true
-  apt-get -f install -y
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-  apt-get install -y nodejs
-fi
-node_major="$(node -p 'process.versions.node.split(".")[0]')"
-[[ "${node_major}" -ge 20 ]] || die "Node.js 20 or newer is required; found $(node --version)."
-
 log "Enabling infrastructure services"
 systemctl enable --now nginx mysql redis-server "php${PHP_VERSION}-fpm"
 
@@ -62,18 +50,9 @@ else
   "${PYTHON_VENV}/bin/pip" install netmiko paramiko
 fi
 
-log "Building frontend"
-cd "${FRONTEND}"
-npm ci
-# Vite's optimized dependency cache is tied to the installed lockfile. Remove
-# stale optimized modules after npm ci so browsers do not receive 504 responses.
-rm -rf "${FRONTEND}/node_modules/.vite" "${FRONTEND}/node_modules/.vite-temp"
-install -d -o www-data -g www-data -m 0775 "${FRONTEND}/node_modules/.vite-temp"
-npm run build
-
 log "Installing Nginx site"
 install -m 0644 "${APP_ROOT}/deploy/nginx-noc-billing.conf" /etc/nginx/sites-available/noc-billing.conf
-sed -i "s#root /var/www/html/frontend/dist;#root ${FRONTEND}/dist;#; s#SCRIPT_FILENAME /var/www/html/backend/public/index.php;#SCRIPT_FILENAME ${BACKEND}/public/index.php;#; s#DOCUMENT_ROOT /var/www/html/backend/public#DOCUMENT_ROOT ${BACKEND}/public#; s#/run/php/php8.1-fpm.sock#/run/php/php${PHP_VERSION}-fpm.sock#" /etc/nginx/sites-available/noc-billing.conf
+sed -i "s#root /var/www/html/backend/public;#root ${BACKEND}/public;#; s#/run/php/php8.1-fpm.sock#/run/php/php${PHP_VERSION}-fpm.sock#" /etc/nginx/sites-available/noc-billing.conf
 ln -sfn /etc/nginx/sites-available/noc-billing.conf /etc/nginx/sites-enabled/noc-billing.conf
 rm -f /etc/nginx/sites-enabled/default
 nginx -t

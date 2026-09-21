@@ -28,17 +28,6 @@ apt-get install -y \
   php${PHP_VERSION}-cli php${PHP_VERSION}-fpm php${PHP_VERSION}-common php${PHP_VERSION}-mysql php${PHP_VERSION}-redis \
   php${PHP_VERSION}-xml php${PHP_VERSION}-curl php${PHP_VERSION}-mbstring php${PHP_VERSION}-zip \
   composer
-if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]]; then
-  log "Installing Node.js 22"
-  dpkg --configure -a || true
-  dpkg --purge --force-depends libnode-dev || true
-  apt-get remove -y libnode-dev || true
-  apt-get -f install -y
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-  apt-get install -y nodejs
-fi
-node_major="$(node -p 'process.versions.node.split(".")[0]')"
-[[ "${node_major}" -ge 20 ]] || die "Node.js 20 or newer is required; found $(node --version)."
 systemctl enable --now mysql redis-server "php${PHP_VERSION}-fpm" nginx
 
 DB_NAME="${DB_NAME:-noc_billing}"

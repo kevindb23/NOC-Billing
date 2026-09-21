@@ -17,14 +17,14 @@ rm -f /tmp/noc-billing-bootstrap.sh
 
 The installer will:
 
-- Install MySQL, Redis, Nginx, PHP, PHP-FPM, Composer, Node.js 22, Python, and build tools.
-- Install the Laravel, React, and Netmiko dependencies.
+- Install MySQL, Redis, Nginx, PHP, PHP-FPM, Composer, Python, and build tools.
+- Install the Laravel and Netmiko dependencies.
 - Clone or repair the repository in `/var/www/html`.
 - Create the `noc_billing` database and users.
 - Import the empty starter database.
 - Create and configure Laravel `.env`.
-- Build the frontend.
-- Install and enable all application services.
+- Configure Nginx and PHP-FPM as the application runtime.
+- Install and enable the application services.
 - Verify that the API and frontend are accessible before reporting success.
 
 The installer is non-interactive. `DB_NAME`, `DB_USER`, `DB_HOST`, `ADMIN_NAME`, and `ADMIN_EMAIL` have safe defaults; `DB_PASSWORD` and `ADMIN_PASSWORD` must be supplied at runtime and are never stored in this public repository. You can override any of these variables with `sudo env` before the script path.

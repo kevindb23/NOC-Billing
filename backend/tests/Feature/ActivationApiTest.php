@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\AcsServer;
 use App\Models\ActivationPreset;
 use App\Models\Olt;
+use App\Models\OltDbaProfile;
 use App\Models\OltOntServiceProfile;
 use App\Models\OltOntTr069ServerProfile;
 use App\Models\OltOntWanProfile;
@@ -113,6 +114,7 @@ class ActivationApiTest extends TestCase
             'name' => 'WAN',
             'status' => 'ready',
         ]);
+        $this->createCompleteQinqProfiles($olt);
         OltQinqProvision::create([
             'olt_id' => $olt->id,
             'outer_vlan' => null,
@@ -194,6 +196,7 @@ class ActivationApiTest extends TestCase
             'name' => 'Service 50',
             'status' => 'ready',
         ]);
+        $this->createCompleteQinqProfiles($olt);
 
         $this->mock(\App\Services\OltProvisioningService::class, function ($mock): void {
             $mock->shouldReceive('activateOnt')->once()->andReturn(['applied' => true]);
@@ -232,6 +235,7 @@ class ActivationApiTest extends TestCase
         $ont->update(['ont_id' => null]);
         $cVlan = OltQinqProvision::create(['olt_id' => $olt->id, 'outer_vlan' => null, 'inner_vlan' => 3001, 'qinq_type' => 'c_vlan', 'name' => 'Home 3001', 'status' => 'ready']);
         $sVlan = OltQinqProvision::create(['olt_id' => $olt->id, 'outer_vlan' => 50, 'inner_vlan' => null, 'qinq_type' => 's_vlan', 'service_port_id' => 10001, 'frame' => 0, 'slot' => 2, 'port_number' => 0, 'name' => 'Service 50', 'status' => 'ready']);
+        $this->createCompleteQinqProfiles($olt);
 
         $this->mock(\App\Services\OltProvisioningService::class, function ($mock): void {
             $mock->shouldReceive('previewOntActivation')->once()->withArgs(function ($olt, array $values): bool {
@@ -320,10 +324,19 @@ class ActivationApiTest extends TestCase
         $version = PlanVersion::create(['plan_id' => $plan->id, 'version' => 1, 'recurring_price_minor' => 150000, 'setup_fee_minor' => 0, 'currency' => 'PHP', 'download_kbps' => 100000, 'upload_kbps' => 50000, 'effective_from' => '2026-01-01']);
         $customer = Customer::create(['customer_number' => 'CUS-000001', 'customer_type' => 'residential', 'legal_name' => 'First Subscriber']);
         $olt = Olt::create(['name' => 'OLT-1', 'vendor' => 'Huawei']);
+        OltDbaProfile::create(['olt_id' => $olt->id, 'profile_id' => 1, 'profile_name' => 'Default DBA', 'bandwidth_mbps' => 100, 'status' => 'ready']);
         $vlan = OltVlanProvision::create(['olt_id' => $olt->id, 'vlan_id' => 120, 'name' => 'Internet VLAN', 'service_mode' => 'internet', 'status' => 'ready']);
         ActivationPreset::create(['olt_id' => $olt->id, 'name' => 'Standard home package']);
         $ont = Ont::create(['olt_id' => $olt->id, 'frame' => 0, 'slot' => 1, 'pon_port' => 2, 'ont_id' => 0, 'serial_number' => 'HWTC0001', 'name' => 'ONT-1', 'status' => 'discovered']);
 
         return [$customer, $version, $ont];
+    }
+
+    private function createCompleteQinqProfiles(Olt $olt): void
+    {
+        OltQinqProvision::create(['olt_id' => $olt->id, 'profile_id' => 17, 'qinq_type' => 'ont_line_profile', 'name' => 'Line 17', 'status' => 'ready']);
+        OltOntServiceProfile::create(['olt_id' => $olt->id, 'profile_id' => 15, 'profile_name' => 'Service 15', 'eth_port_count' => 1, 'port_modes' => ['1' => 'transparent'], 'status' => 'ready']);
+        OltOntWanProfile::create(['olt_id' => $olt->id, 'profile_id' => 15, 'profile_name' => 'WAN 15', 'nat_enabled' => false, 'status' => 'ready']);
+        OltOntTr069ServerProfile::create(['olt_id' => $olt->id, 'profile_id' => 15, 'profile_name' => 'TR-069 15', 'url' => 'http://acs.test', 'username' => 'acs', 'password' => 'secret', 'status' => 'ready']);
     }
 }

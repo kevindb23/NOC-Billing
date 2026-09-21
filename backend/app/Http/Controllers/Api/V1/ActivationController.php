@@ -128,6 +128,7 @@ class ActivationController extends Controller
         abort_if(! $sVlan, 422, 'The selected C-VLAN is not linked to an S-VLAN. Edit the C-VLAN provisioning record first.');
         $tr069Vlan = $olt->vlanProvisions()->where('service_mode', 'tr069')->orderBy('id')->first();
         $profiles = $this->activationProfiles($olt, $preset);
+        $this->ensureActivationProfilesComplete($olt, $preset, $profiles);
 
         $result = $provisioning->previewOntActivation($olt, [
             'frame' => $ont->frame,
@@ -373,6 +374,7 @@ class ActivationController extends Controller
 
             if ($data['provisioning_type'] === 'qinq') {
                 $profiles = $this->activationProfiles($olt, $preset);
+                $this->ensureActivationProfilesComplete($olt, $preset, $profiles);
                 $provisioning->activateOnt($olt, [
                     'frame' => $ont->frame,
                     'slot' => $ont->slot,
@@ -605,6 +607,25 @@ class ActivationController extends Controller
                 ->values()
                 ->all(),
         ];
+    }
+
+    /** @param array{line_profile_id:int|null, service_profile_id:int|null, tr069_profile_id:int|null, wan_profile_ids:list<int>} $profiles */
+    private function ensureActivationProfilesComplete(Olt $olt, ?ActivationPreset $preset, array $profiles): void
+    {
+        $missing = [];
+
+        if ($preset) {
+            if (! $preset->dbaProfile?->profile_id) $missing[] = 'DBA profile';
+        } else {
+            if (! $olt->dbaProfiles()->where('status', '!=', 'archived')->exists()) $missing[] = 'DBA profile';
+        }
+
+        if (! $profiles['line_profile_id']) $missing[] = 'ONT line profile';
+        if (! $profiles['service_profile_id']) $missing[] = 'ONT service profile';
+        if ($profiles['wan_profile_ids'] === []) $missing[] = 'ONT WAN profile';
+        if (! $profiles['tr069_profile_id']) $missing[] = 'TR-069 server profile';
+
+        abort_if($missing !== [], 422, 'Activation cannot proceed. Configure the following OLT profile sections first: '.implode(', ', array_unique($missing)).'.');
     }
 
     private function presetRelations(): array

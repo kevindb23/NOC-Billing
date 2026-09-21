@@ -143,17 +143,15 @@ for service in "${services[@]}"; do
   }
 done
 
-for port in 80 3000; do
-  for attempt in $(seq 1 20); do
-    if (echo > "/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then break; fi
-    [[ "$attempt" == 20 ]] && die "Nothing is listening on port ${port}."
-    sleep 1
-  done
+for attempt in $(seq 1 20); do
+  if (echo > "/dev/tcp/127.0.0.1/80") 2>/dev/null; then break; fi
+  [[ "$attempt" == 20 ]] && die "Nothing is listening on port 80."
+  sleep 1
 done
 
 api_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1/api/v1/acs-servers || true)"
 [[ "$api_status" == "401" || "$api_status" == "403" ]] || die "Laravel API health check failed with HTTP ${api_status:-000}."
-curl -fsS --max-time 10 http://127.0.0.1:3000/ >/dev/null || die "Frontend health check failed."
+curl -fsS --max-time 10 http://127.0.0.1/ >/dev/null || die "Frontend health check failed."
 
 SERVER_IP="$(hostname -I | awk '{print $1}')"
 
@@ -162,5 +160,4 @@ cat <<EOF
 Installation completed.
 Use: sudo systemctl --failed
 Application: http://${SERVER_IP}
-Application (port 3000): http://${SERVER_IP}:3000
 EOF

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Northstar ISP Billing installer.
-# Run from the application checkout as root. Existing .env and databases are preserved.
+# Northstar ISP Billing production installer.
+# Builds the React/Vite frontend and serves it through Nginx. No Vite preview
+# server is used at runtime.
 
 APP_ROOT="${APP_ROOT:-/var/www/html}"
 BACKEND="${APP_ROOT}/backend"
@@ -29,6 +30,12 @@ apt-get install -y \
   php${PHP_VERSION}-curl php${PHP_VERSION}-mbstring php${PHP_VERSION}-zip \
   composer
 
+if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]]; then
+  log "Installing Node.js 22 for the frontend build"
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  apt-get install -y nodejs
+fi
+
 log "Enabling infrastructure services"
 systemctl enable --now nginx mysql redis-server "php${PHP_VERSION}-fpm"
 
@@ -40,6 +47,16 @@ php artisan key:generate --force
 php artisan storage:link || true
 php artisan migrate --force
 php artisan optimize
+
+log "Building the frontend"
+cd "${FRONTEND}"
+if [[ -f package-lock.json ]]; then
+  npm ci
+else
+  npm install
+fi
+npm run build
+chown -R www-data:www-data "${FRONTEND}/dist"
 
 log "Installing Python network automation dependencies"
 python3 -m venv "${PYTHON_VENV}"
@@ -86,27 +103,6 @@ TimeoutStopSec=30
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/noc-billing-vite.service <<EOF
-[Unit]
-Description=Northstar ISP Billing frontend server
-After=network.target
-
-[Service]
-Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=${FRONTEND}
-Environment=NODE_ENV=production
-ExecStart=/usr/bin/npm run preview -- --host 0.0.0.0 --port 3000
-Restart=always
-RestartSec=5
-KillSignal=SIGTERM
-TimeoutStopSec=30
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 chown -R www-data:www-data "${BACKEND}/storage" "${BACKEND}/bootstrap/cache"
 systemctl daemon-reload
 systemctl disable --now noc-billing-vite.service 2>/dev/null || true
@@ -131,7 +127,7 @@ Session services:
   bng-session.service
   router-session.service
 Queue:       noc-billing-queue.service
-Application: Nginx + PHP-FPM (ports 80 and 3000)
+Application: Nginx + PHP-FPM (port 80)
 
 Before exposing the system, review ${BACKEND}/.env and set APP_ENV=production,
 APP_DEBUG=false, database credentials, mail settings, and trusted application URL.

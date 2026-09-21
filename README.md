@@ -59,7 +59,6 @@ After the installer completes, it prints the server IP and URLs:
 
 ```text
 Application: http://SERVER_IP
-Application (port 3000): http://SERVER_IP:3000
 ```
 
 Log in with the administrator account retained in the empty database, then change its password immediately.
@@ -87,7 +86,7 @@ sudo systemctl status nginx php8.1-fpm noc-billing-queue
 sudo systemctl status olt-session bng-session router-session
 ```
 
-Nginx serves the compiled Vite assets and forwards `/api` requests to PHP-FPM. Do not run `php artisan serve` or Vite as a production service.
+Nginx serves the compiled React/Vite assets on port 80 and forwards `/api` requests to PHP-FPM. Do not run `php artisan serve` or the Vite preview/development server as a production service.
 
 ## Logs and troubleshooting
 
@@ -109,7 +108,7 @@ sudo systemctl status nginx php8.1-fpm
 If a port is already occupied:
 
 ```bash
-sudo ss -ltnp 'sport = :3000'
+  sudo ss -ltnp 'sport = :80'
 ```
 
 ## Database and credentials
@@ -143,7 +142,7 @@ Shared Ubuntu packages are preserved because other applications may use MySQL, R
 ## Security
 
 - Use HTTPS for production access.
-- Keep application ports 3000 and 8000 restricted when Nginx is the public entry point.
+- Keep internal service ports restricted when Nginx is the public entry point.
 - Never commit `.env`, passwords, private keys, API tokens, or device credentials.
 - Set `APP_DEBUG=false` outside development.
 - Back up the database before uninstalling or upgrading.

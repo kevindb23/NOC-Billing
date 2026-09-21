@@ -261,14 +261,14 @@ sudo git pull --ff-only origin main
 The uninstaller is a dry run unless `--confirm` is supplied. It removes the application services and Nginx site while preserving shared Ubuntu packages:
 
 ```bash
-sudo bash deploy/uninstaller.sh
-sudo bash deploy/uninstaller.sh --confirm
+wget -qO- https://raw.githubusercontent.com/kevindb23/NOC-Billing/main/deploy/uninstaller.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/kevindb23/NOC-Billing/main/deploy/uninstaller.sh | sudo bash -s -- --confirm
 ```
 
 To explicitly remove the application files and database as well:
 
 ```bash
-sudo bash deploy/uninstaller.sh --confirm --remove-app --remove-database
+wget -qO- https://raw.githubusercontent.com/kevindb23/NOC-Billing/main/deploy/uninstaller.sh | sudo bash -s -- --confirm --remove-app --remove-database
 ```
 
 Back up `.env` and the database first. The script does not purge shared MySQL, Redis, PHP, Node.js, Nginx, or Python packages because other services may depend on them.

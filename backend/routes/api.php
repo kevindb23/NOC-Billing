@@ -70,6 +70,7 @@ Route::prefix('v1')->middleware(['auth:sanctum'])->group(function (): void {
     Route::get('customers', [CustomerController::class, 'index'])->middleware('api.ability:customers.view');
     Route::post('customers', [CustomerController::class, 'store'])->middleware('api.ability:customers.create');
     Route::get('customers/{publicId}', [CustomerController::class, 'show'])->middleware('api.ability:customers.view');
+    Route::post('customers/{publicId}/reveal-ppp-password', [CustomerController::class, 'revealPppPassword'])->middleware('api.ability:customers.view');
     Route::put('customers/{publicId}', [CustomerController::class, 'update'])->middleware('api.ability:customers.update');
     Route::delete('customers/{publicId}', [CustomerController::class, 'destroy'])->middleware('api.ability:customers.delete');
     Route::get('billing-accounts', [BillingController::class, 'accounts'])->middleware('api.ability:billing-accounts.view');

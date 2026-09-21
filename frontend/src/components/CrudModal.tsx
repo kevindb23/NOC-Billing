@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { CaretDownIcon, XIcon } from '@phosphor-icons/react'
+import { CaretDownIcon, EyeIcon, EyeSlashIcon, XIcon } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
@@ -53,7 +53,7 @@ function CurrencyInput({ field, value, currency, onChange, onCurrencyChange }: {
   </div>
 }
 
-export function CrudModal({ open, mode, title, description, fields, initialValues, error, loading, onClose, onSubmit, renderExtra, renderActions, wide, splitLayout, submitLabel }: {
+export function CrudModal({ open, mode, title, description, fields, initialValues, error, loading, onClose, onSubmit, renderExtra, renderActions, wide, splitLayout, submitLabel, canRevealSecrets, onRevealSecret }: {
   open: boolean
   mode: 'view' | 'create' | 'edit'
   title: string
@@ -69,8 +69,12 @@ export function CrudModal({ open, mode, title, description, fields, initialValue
   wide?: boolean
   splitLayout?: boolean
   submitLabel?: string
+  canRevealSecrets?: boolean
+  onRevealSecret?: (fieldName: string) => Promise<string>
 }) {
   const [values, setValues] = useState(initialValues)
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({})
+  const [revealing, setRevealing] = useState<Record<string, boolean>>({})
   if (!open) return null
   const update = (name: string, value: string) => setValues(current => {
     const next = { ...current, [name]: value }
@@ -80,6 +84,17 @@ export function CrudModal({ open, mode, title, description, fields, initialValue
   })
   const submit = async (event: FormEvent) => { event.preventDefault(); await onSubmit(values) }
   const readOnly = mode === 'view'
+  const revealSecret = async (field: CrudField) => {
+    if (!onRevealSecret || revealing[field.name]) return
+    setRevealing(current => ({ ...current, [field.name]: true }))
+    try {
+      const value = await onRevealSecret(field.name)
+      setValues(current => ({ ...current, [field.name]: value }))
+      setVisiblePasswords(current => ({ ...current, [field.name]: true }))
+    } finally {
+      setRevealing(current => ({ ...current, [field.name]: false }))
+    }
+  }
   return <div className="billing-modal-backdrop fixed inset-0 z-50 grid place-items-center overflow-y-auto p-4" role="dialog" aria-modal="true" aria-labelledby="crud-modal-title">
     <Card className={`billing-modal-card relative w-full ${wide ? 'max-w-5xl' : 'max-w-2xl'} shadow-2xl`}>
       <CardHeader className="billing-modal-header border-b pr-14">
@@ -89,7 +104,7 @@ export function CrudModal({ open, mode, title, description, fields, initialValue
         <Button type="button" variant="ghost" size="icon-sm" className="billing-modal-close absolute right-4 top-4" onClick={onClose} aria-label="Close modal"><XIcon /></Button>
       </CardHeader>
       <CardContent className="billing-modal-content pt-5">
-        {readOnly ? <><dl className="billing-modal-details grid gap-2 sm:grid-cols-2">{fields.map(field => <div className="billing-modal-detail" key={field.name}><dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{field.label}</dt><dd className="mt-1 text-sm">{values[field.name] || '—'}</dd></div>)}</dl>{renderExtra?.(values)}</> : <form className={splitLayout ? 'billing-subscription-form' : undefined} onSubmit={submit}><FieldGroup className="grid gap-4 sm:grid-cols-2">{fields.map(field => <Field key={field.name} data-field-name={field.name}><FieldLabel htmlFor={`crud-${field.name}`}>{field.label}</FieldLabel>{field.currency ? <CurrencyInput field={field} value={values[field.name] || ''} currency={values.currency || 'PHP'} onChange={value => update(field.name, value)} onCurrencyChange={value => update('currency', value)} /> : field.options ? (field.searchable === false ? <SimpleSelect field={field} value={values[field.name] || ''} onChange={value => update(field.name, value)} /> : <SearchableSelect field={field} value={values[field.name] || ''} onChange={value => update(field.name, value)} />) : field.type === 'textarea' ? <textarea id={`crud-${field.name}`} className="min-h-24 w-full border border-input bg-background px-2.5 py-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50" value={values[field.name] || ''} onChange={event => update(field.name, event.target.value)} required={field.required} readOnly={field.readOnly} placeholder={field.placeholder} /> : <Input id={`crud-${field.name}`} type={field.type || 'text'} value={values[field.name] || ''} onChange={event => update(field.name, event.target.value)} required={field.required} readOnly={field.readOnly} placeholder={field.placeholder} />}</Field>)}</FieldGroup>{renderExtra?.(values)}{error && <p className="mt-4 text-xs text-destructive">{error}</p>}<div className="billing-modal-footer mt-6 flex justify-end gap-2 border-t pt-4">{renderActions?.(values)}<Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={loading}>{loading ? 'Saving…' : submitLabel || (mode === 'create' ? 'Create' : 'Save changes')}</Button></div></form>}
+        {readOnly ? <><dl className="billing-modal-details grid gap-2 sm:grid-cols-2">{fields.map(field => <div className="billing-modal-detail" key={field.name}><dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{field.label}</dt><dd className="mt-1 text-sm">{field.type === 'password' && canRevealSecrets ? <span className="flex items-center gap-2"><span>{visiblePasswords[field.name] ? values[field.name] || '—' : '••••••••'}</span><button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => visiblePasswords[field.name] ? setVisiblePasswords(current => ({ ...current, [field.name]: false })) : void revealSecret(field)} aria-label={visiblePasswords[field.name] ? `Hide ${field.label}` : `Reveal ${field.label}`} title={visiblePasswords[field.name] ? `Hide ${field.label}` : `Reveal ${field.label}`} disabled={revealing[field.name]}><span aria-hidden="true">{visiblePasswords[field.name] ? <EyeSlashIcon size={16} /> : <EyeIcon size={16} />}</span></button></span> : values[field.name] || '—'}</dd></div>)}</dl>{renderExtra?.(values)}</> : <form className={splitLayout ? 'billing-subscription-form' : undefined} onSubmit={submit}><FieldGroup className="grid gap-4 sm:grid-cols-2">{fields.map(field => <Field key={field.name} data-field-name={field.name}><FieldLabel htmlFor={`crud-${field.name}`}>{field.label}</FieldLabel>{field.currency ? <CurrencyInput field={field} value={values[field.name] || ''} currency={values.currency || 'PHP'} onChange={value => update(field.name, value)} onCurrencyChange={value => update('currency', value)} /> : field.options ? (field.searchable === false ? <SimpleSelect field={field} value={values[field.name] || ''} onChange={value => update(field.name, value)} /> : <SearchableSelect field={field} value={values[field.name] || ''} onChange={value => update(field.name, value)} />) : field.type === 'textarea' ? <textarea id={`crud-${field.name}`} className="min-h-24 w-full border border-input bg-background px-2.5 py-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50" value={values[field.name] || ''} onChange={event => update(field.name, event.target.value)} required={field.required} readOnly={field.readOnly} placeholder={field.placeholder} /> : field.type === 'password' ? <div className="relative"><Input id={`crud-${field.name}`} className="pr-9" type={visiblePasswords[field.name] ? 'text' : 'password'} value={values[field.name] || ''} onChange={event => update(field.name, event.target.value)} required={field.required} readOnly={field.readOnly} placeholder={field.placeholder} /><button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setVisiblePasswords(current => ({ ...current, [field.name]: !current[field.name] }))} aria-label={visiblePasswords[field.name] ? `Hide ${field.label}` : `Show ${field.label}`} title={visiblePasswords[field.name] ? `Hide ${field.label}` : `Show ${field.label}`}><span aria-hidden="true">{visiblePasswords[field.name] ? <EyeSlashIcon size={16} /> : <EyeIcon size={16} />}</span></button></div> : <Input id={`crud-${field.name}`} type={field.type || 'text'} value={values[field.name] || ''} onChange={event => update(field.name, event.target.value)} required={field.required} readOnly={field.readOnly} placeholder={field.placeholder} />}</Field>)}</FieldGroup>{renderExtra?.(values)}{error && <p className="mt-4 text-xs text-destructive">{error}</p>}<div className="billing-modal-footer mt-6 flex justify-end gap-2 border-t pt-4">{renderActions?.(values)}<Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={loading}>{loading ? 'Saving…' : submitLabel || (mode === 'create' ? 'Create' : 'Save changes')}</Button></div></form>}
       </CardContent>
     </Card>
   </div>

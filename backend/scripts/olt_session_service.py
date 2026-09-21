@@ -5,7 +5,7 @@ from typing import Any
 from netmiko import ConnectHandler
 from huawei_olt_driver import OPERATIONS as HUAWEI_OPERATIONS
 from hsgq_olt_driver import OPERATIONS as HSGQ_OPERATIONS
-from bng_driver_linux import read_accel_ppp_config, preview_accel_ppp_config, save_accel_ppp_config, preview_iptables, save_iptables, ensure_vlan_interfaces, remove_vlan_interfaces
+from bng_driver_linux import read_accel_ppp_config, preview_accel_ppp_config, save_accel_ppp_config, preview_iptables, save_iptables, ensure_vlan_interfaces, remove_vlan_interfaces, ensure_pppoe_interfaces, remove_pppoe_interfaces
 from bng_driver_mikrotik import unsupported as mikrotik_accel_ppp_unsupported
 
 SOCKET = os.environ.get("OLT_SESSION_SOCKET", "/run/olt-session/olt-session.sock")
@@ -23,6 +23,8 @@ BNG_OPERATIONS = {
         "save_iptables": save_iptables,
         "ensure_vlan_interfaces": ensure_vlan_interfaces,
         "remove_vlan_interfaces": remove_vlan_interfaces,
+        "ensure_pppoe_interfaces": ensure_pppoe_interfaces,
+        "remove_pppoe_interfaces": remove_pppoe_interfaces,
     },
     "mikrotik_routeros": {
         "read_accel_ppp_config": mikrotik_accel_ppp_unsupported,

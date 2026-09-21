@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Activation;
 use App\Models\ActivationPreset;
+use App\Models\AcsServer;
 use App\Models\BillingAccount;
 use App\Models\BillingStatement;
 use App\Models\Customer;
@@ -91,6 +92,7 @@ class ActivationController extends Controller
                 'tr069' => $olt->ontTr069ServerProfiles()->where('status', '!=', 'archived')->orderBy('profile_name')->get()->map(fn (OltOntTr069ServerProfile $item) => $item->only(['id', 'profile_id', 'profile_name', 'url', 'username', 'status'])),
             ],
             'presets' => $this->presetQuery($olt)->get()->map(fn (ActivationPreset $preset) => $this->presetPayload($preset)),
+            'acs_servers' => AcsServer::query()->where('status', 'active')->orderBy('name')->get(['public_id', 'name', 'status']),
         ]]);
     }
 
@@ -317,6 +319,7 @@ class ActivationController extends Controller
             'plan_version_id' => ['required', 'integer'],
             'ont_public_id' => ['required', 'string'],
             'olt_public_id' => ['required', 'string'],
+            'acs_server_public_id' => ['nullable', 'string'],
             'ont_id' => ['nullable', 'integer', 'between:0,255'],
             'preset_public_id' => ['nullable', 'string'],
             'provisioning_type' => ['required', 'in:vlan,qinq'],
@@ -329,11 +332,17 @@ class ActivationController extends Controller
 
     private function activate(array $data, OltProvisioningService $provisioning, AcsServerService $acs): Activation
     {
-        return DB::transaction(function () use ($data, $provisioning): Activation {
+        return DB::transaction(function () use ($data, $provisioning, $acs): Activation {
             $customer = Customer::query()->where('public_id', $data['subscriber_id'])->firstOrFail();
             $olt = Olt::query()->where('public_id', $data['olt_public_id'])->lockForUpdate()->firstOrFail();
             $ont = Ont::query()->where('public_id', $data['ont_public_id'])->lockForUpdate()->firstOrFail();
             abort_if((int) $ont->olt_id !== (int) $olt->id, 422, 'The selected ONT does not belong to the selected OLT.');
+            if (! empty($data['acs_server_public_id'])) {
+                $acsServer = AcsServer::query()->where('public_id', $data['acs_server_public_id'])->where('status', 'active')->firstOrFail();
+                $ont->update(['acs_server_id' => $acsServer->id]);
+                $ont->setRelation('acsServer', $acsServer);
+                abort_unless($customer->hasPppCredentials(), 422, 'This subscriber is missing PPP username or password required for ACS provisioning.');
+            }
             if ($data['provisioning_type'] === 'qinq') {
                 $requestedOntId = array_key_exists('ont_id', $data) && $data['ont_id'] !== null ? (int) $data['ont_id'] : null;
                 $ontId = $this->resolveOntId($olt, $ont, $requestedOntId);
@@ -409,6 +418,11 @@ class ActivationController extends Controller
                 'status' => 'pending',
             ]);
             abort_unless($service->billing_account_id === $account->id, 422, 'Subscriber service does not belong to the selected billing account.');
+            $service->update([
+                'status' => 'active',
+                'activated_at' => $service->activated_at ?: now(),
+                'suspended_at' => null,
+            ]);
 
             $settings = OrganizationBillingSetting::firstOrCreate([]);
             $cycleStartDay = (int) ($settings->cycle_start_day ?: 20);
@@ -445,7 +459,6 @@ class ActivationController extends Controller
             // Only ONTs assigned to an ACS are provisioned here. This keeps legacy
             // activations compatible while ensuring managed ONTs receive PPPoE data.
             if ($ont->acsServer) {
-                abort_unless($customer->hasPppCredentials(), 422, 'This subscriber is missing PPP username or password required for ACS provisioning.');
                 $acs->configurePppoe($ont, (string) $customer->ppp_username, (string) $customer->ppp_password, $internetVlan);
             }
 
@@ -556,7 +569,7 @@ class ActivationController extends Controller
 
     private function messageFor(Throwable $exception): string
     {
-        if ($exception instanceof ValidationException) return $exception->validator->errors()->flatten()->first() ?: 'Validation failed.';
+        if ($exception instanceof ValidationException) return $exception->validator->errors()->all()[0] ?? 'Validation failed.';
         return $exception->getMessage() ?: 'Activation could not be created.';
     }
 

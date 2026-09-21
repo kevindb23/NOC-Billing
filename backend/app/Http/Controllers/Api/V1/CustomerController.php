@@ -8,6 +8,7 @@ use App\Models\BillingAccount;
 use App\Models\Customer;
 use App\Models\SubscriberService;
 use App\Services\NumberGenerator;
+use App\Services\OrganizationPermissionService;
 use App\Services\RadiusSubscriberSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,11 +19,16 @@ class CustomerController extends Controller
 {
     public function store(StoreCustomerRequest $request, RadiusSubscriberSyncService $sync): JsonResponse
     {
-        $customer = Customer::create([
-            ...$request->validated(),
-            'customer_number' => $this->nextCustomerNumber(),
-        ]);
-        $sync->syncEnabledServersForCustomer($customer);
+        $customer = DB::transaction(function () use ($request, $sync): Customer {
+            $sync->assertReady();
+            $customer = Customer::create([
+                ...$request->validated(),
+                'customer_number' => $this->nextCustomerNumber(),
+            ]);
+            $sync->syncEnabledServersForCustomer($customer);
+
+            return $customer;
+        });
 
         return response()->json(['data' => $customer->fresh(), 'correlation_id' => $request->header('X-Request-Id')], 201);
     }
@@ -38,12 +44,26 @@ class CustomerController extends Controller
             });
         }
 
-        return response()->json(['data' => $query->latest()->paginate($request->integer('per_page', 20))]);
+        return response()->json([
+            'data' => $query->latest()->paginate($request->integer('per_page', 20)),
+            'radius_sync' => RadiusSubscriberSyncService::readiness(),
+        ]);
     }
 
     public function show(Request $request, string $publicId): JsonResponse
     {
         return response()->json(['data' => $this->customer($request, $publicId)->load(['billingAccounts', 'subscriberServices'])]);
+    }
+
+    public function revealPppPassword(Request $request, string $publicId, OrganizationPermissionService $permissions): JsonResponse
+    {
+        abort_unless($permissions->isSuperAdmin($request->user()), 403, 'Only superadmins may reveal PPP passwords.');
+
+        $customer = $this->customer($request, $publicId);
+
+        return response()->json(['data' => [
+            'ppp_password' => (string) $customer->ppp_password,
+        ]]);
     }
 
     public function update(Request $request, string $publicId, RadiusSubscriberSyncService $sync): JsonResponse
@@ -59,17 +79,21 @@ class CustomerController extends Controller
             'status' => ['sometimes', 'string', 'in:active,inactive'], 'notes' => ['nullable', 'string'],
         ]);
         foreach (['portal_password', 'ppp_password'] as $key) if (array_key_exists($key, $values) && blank($values[$key])) unset($values[$key]);
-        $customer->update($values);
-        if ($customer->status === 'active' && filled($customer->ppp_username)) {
-            $customer->subscriberServices()
-                ->where('status', 'pending')
-                ->update(['status' => 'active', 'activated_at' => now()]);
-        }
-        $sync->syncEnabledServersForCustomer($customer);
+        $previousUsername = (string) $customer->ppp_username;
+        DB::transaction(function () use ($customer, $values, $sync, $previousUsername): void {
+            $sync->assertReady();
+            $customer->update($values);
+            if ($customer->status === 'active' && filled($customer->ppp_username)) {
+                $customer->subscriberServices()
+                    ->where('status', 'pending')
+                    ->update(['status' => 'active', 'activated_at' => now()]);
+            }
+            $sync->syncEnabledServersForCustomer($customer, $previousUsername);
+        });
         return response()->json(['data' => $customer->fresh()]);
     }
 
-    public function destroy(Request $request, string $publicId): \Illuminate\Http\Response
+    public function destroy(Request $request, string $publicId, RadiusSubscriberSyncService $sync): \Illuminate\Http\Response
     {
         $customer = $this->customer($request, $publicId);
         if ($request->boolean('permanent')) {
@@ -91,7 +115,8 @@ class CustomerController extends Controller
             );
             $hasServiceHistory = $serviceIds->isNotEmpty() && DB::table('subscriptions')->whereIn('subscriber_service_id', $serviceIds)->exists();
             abort_if($hasBillingHistory || $hasServiceHistory, 422, 'This subscriber cannot be permanently deleted while billing records or subscriptions reference it.');
-            DB::transaction(function () use ($customer, $accountIds, $serviceIds): void {
+            DB::transaction(function () use ($customer, $accountIds, $serviceIds, $sync): void {
+                $sync->removeCustomerFromEnabledServers($customer);
                 SubscriberService::whereIn('id', $serviceIds)->delete();
                 BillingAccount::whereIn('id', $accountIds)->delete();
                 $customer->forceDelete();

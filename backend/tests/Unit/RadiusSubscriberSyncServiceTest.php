@@ -14,6 +14,7 @@ use App\Models\Subscription;
 use App\Services\RadiusSubscriberSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PDO;
+use RuntimeException;
 use Tests\TestCase;
 
 class RadiusSubscriberSyncServiceTest extends TestCase
@@ -24,6 +25,7 @@ class RadiusSubscriberSyncServiceTest extends TestCase
     {
         $external = new PDO('sqlite::memory:');
         $external->exec('CREATE TABLE isp_subscribers (username VARCHAR(64) PRIMARY KEY, status VARCHAR(16) NOT NULL, expires_at DATETIME NULL, plan VARCHAR(64) NOT NULL)');
+        $external->exec('CREATE TABLE radcheck (username VARCHAR(64) NOT NULL, attribute VARCHAR(64) NOT NULL, op VARCHAR(2) NOT NULL, value VARCHAR(255) NOT NULL)');
         [$server, $customer] = $this->fixtures();
 
         $service = new RadiusSubscriberSyncService(fn () => $external);
@@ -35,6 +37,97 @@ class RadiusSubscriberSyncServiceTest extends TestCase
         $customer->update(['status' => 'inactive']);
         $service->syncServer($server);
         $this->assertSame('SUSPENDED', $external->query("SELECT status FROM isp_subscribers WHERE username = 'subscriber01'")->fetchColumn());
+    }
+
+    public function test_backfill_writes_the_pppoe_password_to_standard_radcheck(): void
+    {
+        $external = new PDO('sqlite::memory:');
+        $external->exec('CREATE TABLE isp_subscribers (username VARCHAR(64) PRIMARY KEY, status VARCHAR(16) NOT NULL, expires_at DATETIME NULL, plan VARCHAR(64) NOT NULL)');
+        $external->exec('CREATE TABLE radcheck (username VARCHAR(64) NOT NULL, attribute VARCHAR(64) NOT NULL, op VARCHAR(2) NOT NULL, value VARCHAR(255) NOT NULL)');
+        [$server, $customer] = $this->fixtures();
+
+        (new RadiusSubscriberSyncService(fn () => $external))->syncServer($server);
+
+        $row = $external->query("SELECT username, attribute, op, value FROM radcheck WHERE username = 'subscriber01'")->fetch(PDO::FETCH_ASSOC);
+        $this->assertSame([
+            'username' => 'subscriber01',
+            'attribute' => 'Cleartext-Password',
+            'op' => ':=',
+            'value' => 'secret',
+        ], $row);
+    }
+
+    public function test_active_customer_without_service_is_synced_to_radcheck_immediately(): void
+    {
+        $external = new PDO('sqlite::memory:');
+        $external->exec('CREATE TABLE isp_subscribers (username VARCHAR(64) PRIMARY KEY, status VARCHAR(16) NOT NULL, expires_at DATETIME NULL, plan VARCHAR(64) NOT NULL)');
+        $external->exec('CREATE TABLE radcheck (username VARCHAR(64) NOT NULL, attribute VARCHAR(64) NOT NULL, op VARCHAR(2) NOT NULL, value VARCHAR(255) NOT NULL)');
+        $bng = Bng::create(['name' => 'Linux BNG', 'vendor' => 'linux', 'model' => 'Accel-PPP', 'management_endpoint' => '10.0.0.10', 'preferred_transport' => 'ssh', 'status' => 'active']);
+        $server = BngRadiusServer::create(['bng_id' => $bng->id, 'name' => 'Primary RADIUS', 'server_address' => '10.0.0.20', 'secret' => 'testing123', 'database_name' => 'radius', 'database_username' => 'radius', 'database_password' => 'secret', 'auth_port' => 1812, 'accounting_port' => 1813, 'status' => 'ready', 'sync_subscribers' => true]);
+        $customer = Customer::create(['customer_number' => 'CUS-000002', 'customer_type' => 'residential', 'legal_name' => 'New Subscriber', 'ppp_username' => 'new-user', 'ppp_password' => 'new-secret', 'status' => 'active']);
+
+        (new RadiusSubscriberSyncService(fn () => $external))->syncServer($server);
+
+        $this->assertSame('ACTIVE', $external->query("SELECT status FROM isp_subscribers WHERE username = 'new-user'")->fetchColumn());
+        $this->assertSame('new-secret', $external->query("SELECT value FROM radcheck WHERE username = 'new-user'")->fetchColumn());
+    }
+
+    public function test_inactive_subscriber_cannot_authenticate_from_standard_radcheck(): void
+    {
+        $external = new PDO('sqlite::memory:');
+        $external->exec('CREATE TABLE isp_subscribers (username VARCHAR(64) PRIMARY KEY, status VARCHAR(16) NOT NULL, expires_at DATETIME NULL, plan VARCHAR(64) NOT NULL)');
+        $external->exec('CREATE TABLE radcheck (username VARCHAR(64) NOT NULL, attribute VARCHAR(64) NOT NULL, op VARCHAR(2) NOT NULL, value VARCHAR(255) NOT NULL)');
+        [$server, $customer] = $this->fixtures();
+        $service = new RadiusSubscriberSyncService(fn () => $external);
+
+        $service->syncServer($server);
+        $customer->update(['status' => 'inactive']);
+        $service->syncServer($server);
+
+        $this->assertFalse((bool) $external->query("SELECT 1 FROM radcheck WHERE username = 'subscriber01' AND attribute = 'Cleartext-Password' LIMIT 1")->fetchColumn());
+    }
+
+    public function test_backfill_rejects_a_status_only_radius_schema(): void
+    {
+        $external = new PDO('sqlite::memory:');
+        $external->exec('CREATE TABLE isp_subscribers (username VARCHAR(64) PRIMARY KEY, status VARCHAR(16) NOT NULL, expires_at DATETIME NULL, plan VARCHAR(64) NOT NULL)');
+        [$server] = $this->fixtures();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('radcheck table');
+
+        (new RadiusSubscriberSyncService(fn () => $external))->syncServer($server);
+    }
+
+    public function test_editing_a_username_removes_the_old_radius_credential(): void
+    {
+        $external = new PDO('sqlite::memory:');
+        $external->exec('CREATE TABLE isp_subscribers (username VARCHAR(64) PRIMARY KEY, status VARCHAR(16) NOT NULL, expires_at DATETIME NULL, plan VARCHAR(64) NOT NULL)');
+        $external->exec('CREATE TABLE radcheck (username VARCHAR(64) NOT NULL, attribute VARCHAR(64) NOT NULL, op VARCHAR(2) NOT NULL, value VARCHAR(255) NOT NULL)');
+        [$server, $customer] = $this->fixtures();
+        $sync = new RadiusSubscriberSyncService(fn () => $external);
+
+        $sync->syncServer($server);
+        $customer->update(['ppp_username' => 'subscriber02']);
+        $sync->syncEnabledServersForCustomer($customer, 'subscriber01');
+
+        $this->assertFalse((bool) $external->query("SELECT 1 FROM radcheck WHERE username = 'subscriber01' LIMIT 1")->fetchColumn());
+        $this->assertTrue((bool) $external->query("SELECT 1 FROM radcheck WHERE username = 'subscriber02' LIMIT 1")->fetchColumn());
+    }
+
+    public function test_permanent_customer_cleanup_removes_external_subscriber_and_authentication(): void
+    {
+        $external = new PDO('sqlite::memory:');
+        $external->exec('CREATE TABLE isp_subscribers (username VARCHAR(64) PRIMARY KEY, status VARCHAR(16) NOT NULL, expires_at DATETIME NULL, plan VARCHAR(64) NOT NULL)');
+        $external->exec('CREATE TABLE radcheck (username VARCHAR(64) NOT NULL, attribute VARCHAR(64) NOT NULL, op VARCHAR(2) NOT NULL, value VARCHAR(255) NOT NULL)');
+        [$server, $customer] = $this->fixtures();
+        $sync = new RadiusSubscriberSyncService(fn () => $external);
+
+        $sync->syncServer($server);
+        $sync->removeCustomerFromEnabledServers($customer);
+
+        $this->assertFalse((bool) $external->query("SELECT 1 FROM isp_subscribers WHERE username = 'subscriber01' LIMIT 1")->fetchColumn());
+        $this->assertFalse((bool) $external->query("SELECT 1 FROM radcheck WHERE username = 'subscriber01' LIMIT 1")->fetchColumn());
     }
 
     private function fixtures(): array

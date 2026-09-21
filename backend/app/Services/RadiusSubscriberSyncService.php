@@ -5,8 +5,8 @@ namespace App\Services;
 use App\Models\BngRadiusServer;
 use App\Models\Customer;
 use Closure;
-use Illuminate\Support\Facades\Log;
 use PDO;
+use RuntimeException;
 use Throwable;
 
 class RadiusSubscriberSyncService
@@ -16,6 +16,36 @@ class RadiusSubscriberSyncService
      */
     public function __construct(private readonly ?Closure $connector = null)
     {
+    }
+
+    /** @return array{ready:bool,enabled_server_count:int,servers:array<int,array{id:int,name:string,status:string}>} */
+    public static function readiness(): array
+    {
+        $servers = BngRadiusServer::query()
+            ->where('sync_subscribers', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'status']);
+
+        return [
+            'ready' => $servers->isNotEmpty(),
+            'enabled_server_count' => $servers->count(),
+            'servers' => $servers->map(fn (BngRadiusServer $server): array => [
+                'id' => $server->id,
+                'name' => $server->name,
+                'status' => $server->status,
+            ])->values()->all(),
+        ];
+    }
+
+    public function assertReady(): void
+    {
+        if (self::readiness()['ready']) {
+            return;
+        }
+
+        throw \Illuminate\Validation\ValidationException::withMessages([
+            'radius' => 'Subscriber management is unavailable until at least one RADIUS server has subscriber synchronization enabled.',
+        ]);
     }
 
     /**
@@ -36,9 +66,9 @@ class RadiusSubscriberSyncService
             ->where('ppp_username', '!=', '')
             ->with(['subscriberServices.subscriptions.planVersion.plan'])
             ->orderBy('id')
-            ->chunkById(100, function ($customers) use ($statement, &$count): void {
+            ->chunkById(100, function ($customers) use ($statement, $pdo, &$count): void {
                 foreach ($customers as $customer) {
-                    $this->writeCustomer($statement, $customer);
+                    $this->writeCustomer($statement, $pdo, $customer);
                     $count++;
                 }
             });
@@ -51,25 +81,68 @@ class RadiusSubscriberSyncService
      * A RADIUS outage must not roll back a local subscriber save; the failure is logged
      * and the next edit, subscription change, or backfill can retry it.
      */
-    public function syncEnabledServersForCustomer(Customer $customer): void
+    public function syncEnabledServersForCustomer(Customer $customer, ?string $previousUsername = null): void
     {
         $customer = $customer->fresh(['subscriberServices.subscriptions.planVersion.plan']);
-        if (! $customer || blank($customer->ppp_username)) {
+        if (! $customer) {
             return;
         }
 
         BngRadiusServer::query()
             ->where('sync_subscribers', true)
-            ->each(function (BngRadiusServer $server) use ($customer): void {
+            ->each(function (BngRadiusServer $server) use ($customer, $previousUsername): void {
                 try {
-                    $statement = $this->upsertStatement($this->connect($server));
-                    $this->writeCustomer($statement, $customer);
+                    $pdo = $this->connect($server);
+                    if (filled($previousUsername) && $previousUsername !== (string) $customer->ppp_username) {
+                        $this->removeAuthentication($pdo, $previousUsername);
+                    }
+                    $statement = $this->upsertStatement($pdo);
+                    if (filled($customer->ppp_username)) {
+                        $this->writeCustomer($statement, $pdo, $customer);
+                    }
                 } catch (Throwable $exception) {
-                    Log::warning('Unable to sync subscriber to RADIUS database.', [
-                        'radius_server_id' => $server->id,
-                        'customer_id' => $customer->id,
-                        'exception' => $exception,
-                    ]);
+                    throw new RuntimeException(
+                        "Subscriber synchronization failed on RADIUS server '{$server->name}'. Verify its database connection and schema.",
+                        0,
+                        $exception,
+                    );
+                }
+        });
+    }
+
+    /**
+     * Remove a permanently deleted subscriber from every enabled RADIUS server.
+     * This is deliberately separate from authentication cleanup because the
+     * business subscriber row must also be removed from isp_subscribers.
+     */
+    public function removeCustomerFromEnabledServers(Customer $customer): void
+    {
+        $username = trim((string) $customer->ppp_username);
+        if ($username === '') {
+            return;
+        }
+
+        BngRadiusServer::query()
+            ->where('sync_subscribers', true)
+            ->each(function (BngRadiusServer $server) use ($username): void {
+                try {
+                    $pdo = $this->connect($server);
+
+                    if ($this->tableExists($pdo, 'radcheck')) {
+                        $statement = $pdo->prepare("DELETE FROM radcheck WHERE username = :username");
+                        $statement->execute(['username' => $username]);
+                    }
+
+                    if ($this->tableExists($pdo, 'isp_subscribers')) {
+                        $statement = $pdo->prepare('DELETE FROM isp_subscribers WHERE username = :username');
+                        $statement->execute(['username' => $username]);
+                    }
+                } catch (Throwable $exception) {
+                    throw new RuntimeException(
+                        "Subscriber cleanup failed on RADIUS server '{$server->name}'. Verify its database connection and schema.",
+                        0,
+                        $exception,
+                    );
                 }
             });
     }
@@ -81,20 +154,118 @@ class RadiusSubscriberSyncService
             ->flatMap(fn ($service) => $service->subscriptions)
             ->sortByDesc('id');
         $subscription = $subscriptions->firstWhere('status', 'active') ?: $subscriptions->first();
-        $serviceIsActive = $subscription?->service?->status === 'active'
+        // A newly created subscriber may not have a billing service yet. The
+        // customer status is still sufficient for the initial RADIUS sync;
+        // service/subscription state only suspends an already provisioned user.
+        $hasServices = $customer->subscriberServices->isNotEmpty();
+        $serviceIsActive = ! $hasServices
+            || $subscription?->service?->status === 'active'
             || $customer->subscriberServices->contains(fn ($service) => $service->status === 'active');
+        $hasSubscriptions = $subscriptions->isNotEmpty();
+        $subscriptionIsActive = ! $hasSubscriptions || $subscription?->status === 'active';
 
         return [
             'username' => (string) $customer->ppp_username,
-            'status' => $customer->status === 'active' && $subscription?->status === 'active' && $serviceIsActive ? 'ACTIVE' : 'SUSPENDED',
+            'status' => $customer->status === 'active' && $subscriptionIsActive && $serviceIsActive ? 'ACTIVE' : 'SUSPENDED',
             'expires_at' => $subscription?->ends_on?->toDateTimeString(),
             'plan' => mb_substr((string) ($subscription?->plan_name_snapshot ?: $subscription?->planVersion?->plan?->name ?: 'unassigned'), 0, 32),
         ];
     }
 
-    private function writeCustomer($statement, Customer $customer): void
+    private function writeCustomer($statement, PDO $pdo, Customer $customer): void
     {
         $statement->execute(self::subscriberRow($customer));
+        $this->syncAuthentication($pdo, $customer);
+    }
+
+    private function syncAuthentication(PDO $pdo, Customer $customer): void
+    {
+        $username = (string) $customer->ppp_username;
+        $password = (string) $customer->ppp_password;
+        if ($username === '') {
+            return;
+        }
+
+        if ($this->tableExists($pdo, 'radcheck')) {
+            $delete = $pdo->prepare("DELETE FROM radcheck WHERE username = :username AND attribute = 'Cleartext-Password'");
+            $delete->execute(['username' => $username]);
+
+            if (self::subscriberRow($customer)['status'] !== 'ACTIVE' || $password === '') {
+                return;
+            }
+
+            $insert = $pdo->prepare("INSERT INTO radcheck (username, attribute, op, value) VALUES (:username, 'Cleartext-Password', ':=', :value)");
+            $insert->execute(['username' => $username, 'value' => $password]);
+            return;
+        }
+
+        if ($password === '') {
+            throw new RuntimeException('The RADIUS database must contain a radcheck table or an isp_subscribers password column for PPPoE authentication.');
+        }
+
+        foreach (['password', 'ppp_password'] as $column) {
+            if (! $this->columnExists($pdo, 'isp_subscribers', $column)) {
+                continue;
+            }
+
+            $statement = $pdo->prepare("UPDATE isp_subscribers SET {$column} = :password WHERE username = :username");
+            $statement->execute(['password' => $password, 'username' => $username]);
+            return;
+        }
+
+        throw new RuntimeException('The RADIUS database must contain a radcheck table or an isp_subscribers password column for PPPoE authentication.');
+    }
+
+    private function removeAuthentication(PDO $pdo, string $username): void
+    {
+        if ($this->tableExists($pdo, 'radcheck')) {
+            $statement = $pdo->prepare("DELETE FROM radcheck WHERE username = :username AND attribute = 'Cleartext-Password'");
+            $statement->execute(['username' => $username]);
+            return;
+        }
+
+        foreach (['password', 'ppp_password'] as $column) {
+            if (! $this->columnExists($pdo, 'isp_subscribers', $column)) {
+                continue;
+            }
+
+            $statement = $pdo->prepare("UPDATE isp_subscribers SET {$column} = '' WHERE username = :username");
+            $statement->execute(['username' => $username]);
+            return;
+        }
+
+        throw new RuntimeException('The RADIUS database must contain a radcheck table or an isp_subscribers password column for PPPoE authentication.');
+    }
+
+    private function tableExists(PDO $pdo, string $table): bool
+    {
+        if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+            $statement = $pdo->prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :table LIMIT 1");
+            $statement->execute(['table' => $table]);
+            return (bool) $statement->fetchColumn();
+        }
+
+        $statement = $pdo->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = :table LIMIT 1");
+        $statement->execute(['table' => $table]);
+        return (bool) $statement->fetchColumn();
+    }
+
+    private function columnExists(PDO $pdo, string $table, string $column): bool
+    {
+        if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+            $quotedTable = str_replace('"', '""', $table);
+            $statement = $pdo->query("PRAGMA table_info(\"{$quotedTable}\")");
+            foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $definition) {
+                if ((string) ($definition['name'] ?? '') === $column) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        $statement = $pdo->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :table AND column_name = :column LIMIT 1");
+        $statement->execute(['table' => $table, 'column' => $column]);
+        return (bool) $statement->fetchColumn();
     }
 
     private function upsertStatement(PDO $pdo): mixed

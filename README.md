@@ -1,6 +1,30 @@
 # Northstar ISP Billing
 
-Northstar is a Laravel and React/Vite ISP billing and network operations system with subscriber activation, OLT/ONT, BNG, router, RADIUS, and GenieACS integrations.
+Northstar is an ISP billing and network operations system with subscriber activation, OLT/ONT, BNG, router, RADIUS, and GenieACS integrations.
+
+## Current technology stack
+
+- Ubuntu 22.04/24.04 LTS
+- Laravel/PHP API running behind Nginx and PHP-FPM
+- MySQL database
+- Redis queues, cache, and sessions
+- React application built with Vite
+- Tailwind CSS for the frontend interface
+- Python services using Netmiko for persistent OLT, BNG, and router sessions
+- FreeRADIUS-compatible subscriber synchronization through `isp_subscribers` and `radcheck`
+- GenieACS integration for TR-069/ONT provisioning
+
+The production runtime is Nginx plus PHP-FPM serving the compiled frontend assets. The frontend is not run with the Vite development server in production.
+
+## Release v1.0.3
+
+This release includes:
+
+- Superadmin-only PPP password reveal from subscriber details.
+- Immediate subscriber credential synchronization to the RADIUS database.
+- Cleanup of `isp_subscribers` and `radcheck` when a subscriber is permanently deleted.
+- Improved RADIUS backfill and subscriber status handling.
+- Activation, QinQ, BNG VLAN, and provisioning fixes included in the current deployment.
 
 ## Supported installation method
 

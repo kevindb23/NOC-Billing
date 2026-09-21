@@ -115,6 +115,104 @@ def remove_vlan_interfaces(connection, values):
     return {"interfaces": [item["name"] for item in interfaces], "commands": commands, "verified": True}
 
 
+def _pppoe_interface_names(text):
+    names = []
+    section = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped[1:-1].lower()
+        elif section == "pppoe" and stripped.startswith("interface="):
+            names.append(stripped.split("=", 1)[1].split(",", 1)[0].strip())
+    return names
+
+
+def _render_pppoe_interfaces(text, interfaces):
+    lines = text.splitlines(True)
+    existing = _pppoe_interface_names(text)
+    added = [interface for interface in interfaces if interface not in existing]
+    if not added:
+        return text, []
+
+    section_start = None
+    section_end = len(lines)
+    for index, line in enumerate(lines):
+        stripped = line.strip().lower()
+        if stripped == "[pppoe]":
+            section_start = index
+            continue
+        if section_start is not None and stripped.startswith("[") and stripped.endswith("]"):
+            section_end = index
+            break
+    if section_start is None:
+        raise RuntimeError("The Accel-PPP configuration has no [pppoe] section.")
+
+    newline = "\n"
+    insertion = [f"interface={interface}{newline}" for interface in added]
+    lines[section_end:section_end] = insertion
+    rendered = "".join(lines)
+    if not rendered.endswith("\n"):
+        rendered += "\n"
+    return rendered, added
+
+
+def _write_accel_config(connection, rendered):
+    encoded = base64.b64encode(rendered.encode()).decode()
+    stamp = str(int(time.time()))
+    backup = f"{CONFIG_PATH}.codex.{stamp}.bak"
+    temp = f"{CONFIG_PATH}.codex.{stamp}.tmp"
+    command = (
+        f"sudo cp -- {CONFIG_PATH} {backup} && "
+        f"printf '%s' '{encoded}' | base64 -d | sudo tee {temp} >/dev/null && "
+        f"sudo test -s {temp} && sudo mv -- {temp} {CONFIG_PATH} && "
+        "sudo systemctl restart accel-ppp.service && "
+        "sudo systemctl is-active --quiet accel-ppp.service"
+    )
+    output = connection.send_command(command, read_timeout=30)
+    return backup, output
+
+
+def ensure_pppoe_interfaces(connection, values):
+    interfaces = [_interface_name(interface) for interface in values.get("interfaces", [])]
+    if not interfaces:
+        return {"interfaces": [], "added": [], "verified": True}
+    original = _read(connection)
+    rendered, added = _render_pppoe_interfaces(original, interfaces)
+    if not added:
+        return {"interfaces": interfaces, "added": [], "verified": True, "path": CONFIG_PATH}
+    backup, output = _write_accel_config(connection, rendered)
+    return {"interfaces": interfaces, "added": added, "verified": True, "path": CONFIG_PATH, "backup": backup, "output": output}
+
+
+def remove_pppoe_interfaces(connection, values):
+    interfaces = [_interface_name(interface) for interface in values.get("interfaces", [])]
+    if not interfaces:
+        return {"interfaces": [], "removed": [], "verified": True}
+    original = _read(connection)
+    targets = set(interfaces)
+    lines = original.splitlines(True)
+    rendered_lines = []
+    section = None
+    removed = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped[1:-1].lower()
+        if section == "pppoe" and stripped.startswith("interface="):
+            name = stripped.split("=", 1)[1].split(",", 1)[0].strip()
+            if name in targets:
+                removed.append(name)
+                continue
+        rendered_lines.append(line)
+    if not removed:
+        return {"interfaces": interfaces, "removed": [], "verified": True, "path": CONFIG_PATH}
+    rendered = "".join(rendered_lines)
+    if not rendered.endswith("\n"):
+        rendered += "\n"
+    backup, output = _write_accel_config(connection, rendered)
+    return {"interfaces": interfaces, "removed": removed, "verified": True, "path": CONFIG_PATH, "backup": backup, "output": output}
+
+
 def _read(connection) -> str:
     output = connection.send_command(f"cat {CONFIG_PATH}", read_timeout=15)
     if not output.strip():

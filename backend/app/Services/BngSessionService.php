@@ -52,6 +52,16 @@ class BngSessionService
         return $this->provision($bng, 'ensure_vlan_interfaces', ['parent_interface' => $bng->parent_interface, 'interfaces' => $interfaces]);
     }
 
+    public function ensurePppoeInterfaces(Bng $bng, array $interfaces): array
+    {
+        return $this->provision($bng, 'ensure_pppoe_interfaces', ['interfaces' => array_values(array_unique($interfaces))]);
+    }
+
+    public function removePppoeInterfaces(Bng $bng, array $interfaces): array
+    {
+        return $this->provision($bng, 'remove_pppoe_interfaces', ['interfaces' => array_values(array_unique($interfaces))]);
+    }
+
     public function removeVlanInterfaces(Bng $bng, array $interfaces): array
     {
         return $this->provision($bng, 'remove_vlan_interfaces', ['parent_interface' => $bng->parent_interface, 'interfaces' => $interfaces]);

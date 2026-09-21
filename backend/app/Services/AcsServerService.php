@@ -573,6 +573,11 @@ class AcsServerService
     {
         $path = $this->pppConnectionPath($device, $vlanId);
 
+        Log::info('ACS PPPoE WAN path selected', [
+            'wan_path' => $path,
+            'internet_vlan' => $vlanId,
+        ]);
+
         return [
             'name' => 'setParameterValues',
             'parameterValues' => [
@@ -626,6 +631,7 @@ class AcsServerService
                         $candidates[] = [
                             'path' => $path,
                             'score' => $this->pppConnectionScore($pppConnection),
+                            'vlan_match' => $vlanId !== null && $this->pppConnectionNameMatchesVlan($pppConnection, $vlanId),
                         ];
                     }
                 }
@@ -633,6 +639,16 @@ class AcsServerService
         }
 
         if ($candidates !== []) {
+            if ($vlanId !== null) {
+                foreach ($candidates as $candidate) {
+                    if ($candidate['vlan_match']) {
+                        return $candidate['path'];
+                    }
+                }
+
+                throw new RuntimeException("Could not identify the Internet PPPoE WAN connection for VLAN {$vlanId} on this ONT.");
+            }
+
             $selected = $candidates[0];
             foreach ($candidates as $candidate) {
                 if ($candidate['score'] > $selected['score']) {
@@ -643,7 +659,26 @@ class AcsServerService
             return $selected['path'];
         }
 
+        if ($vlanId !== null) {
+            throw new RuntimeException("The ONT did not report an Internet PPPoE WAN connection for VLAN {$vlanId}.");
+        }
+
         return 'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1';
+    }
+
+    /** @param array<string, mixed> $connection */
+    private function pppConnectionNameMatchesVlan(array $connection, int $vlanId): bool
+    {
+        $values = [];
+        foreach (['Name', 'ConnectionName', 'Description', 'Alias'] as $field) {
+            $value = $this->scalarDeviceValue(data_get($connection, $field));
+            if (filled($value)) {
+                $values[] = strtolower($value);
+            }
+        }
+
+        $name = implode(' ', $values);
+        return $name !== '' && (str_contains($name, 'vid_'.$vlanId) || str_contains($name, 'vlan_'.$vlanId) || preg_match('/(?:^|[^0-9])'.$vlanId.'(?:[^0-9]|$)/', $name) === 1);
     }
 
     /** @param array<string, mixed> $connection */

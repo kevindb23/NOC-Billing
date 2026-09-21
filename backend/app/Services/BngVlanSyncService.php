@@ -118,6 +118,14 @@ class BngVlanSyncService
             }
             try {
                 $this->sessions->ensureVlanInterfaces($rule->bng, array_map(fn (array $descriptor): array => ['name' => $descriptor['name'], 'parent' => $descriptor['parent'], 'vlan_id' => $descriptor['vlan_id']], $descriptors));
+                $pppoeInterfaces = collect($descriptors)
+                    ->filter(fn (array $descriptor): bool => $mode === 'normal' || $descriptor['inner_vlan'] !== null)
+                    ->pluck('name')
+                    ->values()
+                    ->all();
+                if ($pppoeInterfaces) {
+                    $this->sessions->ensurePppoeInterfaces($rule->bng, $pppoeInterfaces);
+                }
                 BngVlanInterface::query()->where('bng_id', $rule->bng_id)->where('olt_id', $olt->id)->whereIn('interface_name', array_column($descriptors, 'name'))->update(['status' => 'applied', 'last_error' => null]);
             } catch (Throwable $exception) {
                 BngVlanInterface::query()->where('bng_id', $rule->bng_id)->where('olt_id', $olt->id)->whereIn('interface_name', array_column($descriptors, 'name'))->update(['status' => 'error', 'last_error' => $exception->getMessage()]);
@@ -147,6 +155,14 @@ class BngVlanSyncService
     private function removeInterface($bng, BngVlanInterface $interface): array
     {
         try {
+            $isPppoeInterface = $interface->vlan_mode === 'normal' || $interface->inner_vlan !== null;
+            $isLastPppoeReference = BngVlanInterface::query()
+                ->where('bng_id', $interface->bng_id)
+                ->where('interface_name', $interface->interface_name)
+                ->count() === 1;
+            if ($isPppoeInterface && $isLastPppoeReference) {
+                $this->sessions->removePppoeInterfaces($bng, [$interface->interface_name]);
+            }
             $this->sessions->removeVlanInterfaces($bng, [['name' => $interface->interface_name, 'vlan_id' => $interface->inner_vlan ?: $interface->outer_vlan, 'parent' => $this->interfaceParent($interface->interface_name)]]);
             $interface->delete();
             return [];

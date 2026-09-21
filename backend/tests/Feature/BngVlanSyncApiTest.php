@@ -52,6 +52,7 @@ class BngVlanSyncApiTest extends TestCase
         $bng->update(['parent_interface' => 'ens17']);
         $olt->vlanProvisions()->create(['vlan_id' => 3001, 'vlan_type' => 'smart', 'name' => 'Customer VLAN', 'service_mode' => 'internet', 'status' => 'applied']);
         $this->mock(BngSessionService::class, function ($mock): void {
+            $mock->shouldReceive('ensurePppoeInterfaces')->zeroOrMoreTimes()->andReturn(['interfaces' => [], 'added' => []]);
             $mock->shouldReceive('ensureVlanInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
                 return $actual->parent_interface === 'ens17' && $interfaces[0]['name'] === 'ens17.3001';
             })->andReturn(['interfaces' => ['ens17.3001']]);
@@ -72,6 +73,7 @@ class BngVlanSyncApiTest extends TestCase
         $olt->vlanProvisions()->create(['vlan_id' => 3001, 'vlan_type' => 'smart', 'name' => 'Customer VLAN', 'service_mode' => 'internet', 'status' => 'applied']);
         $rule = $bng->vlanSyncs()->create(['olt_id' => $olt->id, 'vlan_mode' => 'normal', 'enabled' => false]);
         $this->mock(BngSessionService::class, function ($mock): void {
+            $mock->shouldReceive('ensurePppoeInterfaces')->zeroOrMoreTimes()->andReturn(['interfaces' => [], 'added' => []]);
             $mock->shouldReceive('ensureVlanInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
                 return $actual->parent_interface === 'ens17' && $interfaces[0]['name'] === 'ens17.3001';
             })->andReturn(['interfaces' => ['ens17.3001']]);
@@ -125,6 +127,9 @@ class BngVlanSyncApiTest extends TestCase
         $bng->update(['parent_interface' => 'ens17']);
         $bng->vlanSyncs()->create(['olt_id' => $olt->id, 'vlan_mode' => 'normal', 'enabled' => true]);
         $this->mock(BngSessionService::class, function ($mock): void {
+            $mock->shouldReceive('ensurePppoeInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
+                return $actual->parent_interface === 'ens17' && $interfaces === ['ens17.3001'];
+            })->andReturn(['interfaces' => ['ens17.3001'], 'added' => ['ens17.3001']]);
             $mock->shouldReceive('ensureVlanInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
                 return $actual->parent_interface === 'ens17' && $interfaces[0]['name'] === 'ens17.3001' && $interfaces[0]['vlan_id'] === 3001;
             })->andReturn(['interfaces' => ['ens17.3001']]);
@@ -154,6 +159,9 @@ class BngVlanSyncApiTest extends TestCase
         $bng->update(['parent_interface' => 'ens17']);
         $bng->vlanSyncs()->create(['olt_id' => $olt->id, 'vlan_mode' => 'qinq', 'enabled' => true]);
         $this->mock(BngSessionService::class, function ($mock): void {
+            $mock->shouldReceive('ensurePppoeInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
+                return $actual->parent_interface === 'ens17' && $interfaces === ['ens17.50.3001'];
+            })->andReturn(['interfaces' => ['ens17.50.3001'], 'added' => ['ens17.50.3001']]);
             $mock->shouldReceive('ensureVlanInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
                 return array_column($interfaces, 'name') === ['ens17.50', 'ens17.50.3001']
                     && $interfaces[1]['parent'] === 'ens17.50';
@@ -176,6 +184,9 @@ class BngVlanSyncApiTest extends TestCase
         $olt->vlanProvisions()->create(['vlan_id' => 25, 'vlan_type' => 'smart', 'name' => 'TR-069', 'service_mode' => 'tr069', 'status' => 'applied']);
         $captured = [];
         $this->mock(BngSessionService::class, function ($mock) use (&$captured): void {
+            $mock->shouldReceive('ensurePppoeInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
+                return $actual->parent_interface === 'ens17' && $interfaces === ['ens17.100.2000'];
+            })->andReturn(['interfaces' => ['ens17.100.2000'], 'added' => ['ens17.100.2000']]);
             $mock->shouldReceive('ensureVlanInterfaces')->twice()->withArgs(function (Bng $actual, array $interfaces) use (&$captured): bool {
                 $captured[] = array_column($interfaces, 'name');
                 return $actual->parent_interface === 'ens17';
@@ -196,6 +207,9 @@ class BngVlanSyncApiTest extends TestCase
         $olt->qinqProvisions()->create(['qinq_type' => 's_vlan', 'outer_vlan' => 100, 'name' => 'WAN', 'status' => 'applied']);
         $bng->vlanSyncs()->create(['olt_id' => $olt->id, 'vlan_mode' => 'qinq', 'enabled' => true]);
         $this->mock(BngSessionService::class, function ($mock): void {
+            $mock->shouldReceive('ensurePppoeInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
+                return $actual->parent_interface === 'ens17' && $interfaces === ['ens17.100.2000'];
+            })->andReturn(['interfaces' => ['ens17.100.2000'], 'added' => ['ens17.100.2000']]);
             $mock->shouldReceive('ensureVlanInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
                 return array_column($interfaces, 'name') === ['ens17.100', 'ens17.100.2000'];
             })->andReturn(['interfaces' => ['ens17.100', 'ens17.100.2000']]);
@@ -220,6 +234,10 @@ class BngVlanSyncApiTest extends TestCase
             ['bng_id' => $bng->id, 'olt_id' => $olt->id, 'vlan_mode' => 'qinq', 'outer_vlan' => 50, 'inner_vlan' => 3002, 'interface_name' => 'ens17.50.3002', 'status' => 'applied', 'created_at' => now(), 'updated_at' => now()],
         ]);
         $this->mock(BngSessionService::class, function ($mock): void {
+            $mock->shouldReceive('ensurePppoeInterfaces')->zeroOrMoreTimes()->andReturn(['interfaces' => [], 'added' => []]);
+            $mock->shouldReceive('removePppoeInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
+                return $actual->parent_interface === 'ens17' && $interfaces === ['ens17.50.3001'];
+            })->andReturn(['interfaces' => ['ens17.50.3001'], 'removed' => ['ens17.50.3001']]);
             $mock->shouldReceive('removeVlanInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
                 return $actual->parent_interface === 'ens17' && $interfaces[0]['name'] === 'ens17.50.3001';
             })->andReturn(['interfaces' => ['ens17.50.3001']]);
@@ -238,6 +256,7 @@ class BngVlanSyncApiTest extends TestCase
         $bng->update(['parent_interface' => 'ens17']);
         $bng->vlanSyncs()->create(['olt_id' => $olt->id, 'vlan_mode' => 'normal', 'enabled' => true]);
         $this->mock(BngSessionService::class, function ($mock): void {
+            $mock->shouldReceive('ensurePppoeInterfaces')->zeroOrMoreTimes()->andReturn(['interfaces' => [], 'added' => []]);
             $mock->shouldReceive('ensureVlanInterfaces')->once()->andThrow(new \RuntimeException('The BNG session service is not running.'));
         });
 
@@ -259,6 +278,9 @@ class BngVlanSyncApiTest extends TestCase
             $mock->shouldReceive('createVlan')->once()->andReturn(['status' => 'applied']);
         });
         $this->mock(BngSessionService::class, function ($mock): void {
+            $mock->shouldReceive('ensurePppoeInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
+                return $actual->parent_interface === 'ens17' && $interfaces === ['ens17.3001'];
+            })->andReturn(['interfaces' => ['ens17.3001'], 'added' => ['ens17.3001']]);
             $mock->shouldReceive('ensureVlanInterfaces')->once()->withArgs(function (Bng $actual, array $interfaces): bool {
                 return $actual->parent_interface === 'ens17' && $interfaces === [[
                     'name' => 'ens17.3001',

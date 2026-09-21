@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Models\Bng;
+use App\Models\BngRadiusServer;
+use App\Services\RadiusSubscriberSyncService;
 use App\Models\BillingAccount;
 use App\Models\User;
 use App\Models\SubscriberService;
@@ -16,6 +19,7 @@ class BillingFoundationTest extends TestCase
 
     public function test_customer_can_be_created_through_the_installation_api(): void
     {
+        $this->enableSubscriberSync();
         $user = User::factory()->create();
 
         $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/customers', [
@@ -33,6 +37,7 @@ class BillingFoundationTest extends TestCase
 
     public function test_customer_can_be_updated_and_archived(): void
     {
+        $this->enableSubscriberSync();
         $user = User::factory()->create();
         $customer = \App\Models\Customer::create([
             'customer_number' => 'CUS-000001',
@@ -49,6 +54,7 @@ class BillingFoundationTest extends TestCase
 
     public function test_customer_ppp_credentials_are_persisted_for_acs_activation(): void
     {
+        $this->enableSubscriberSync();
         $user = $this->installationUser();
 
         $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/customers', [
@@ -134,6 +140,7 @@ class BillingFoundationTest extends TestCase
     }
     public function test_saving_an_active_subscriber_with_a_ppp_username_activates_pending_services(): void
     {
+        $this->enableSubscriberSync();
         $user = $this->installationUser();
         $customer = \App\Models\Customer::create([
             'customer_number' => 'CUS-000004', 'customer_type' => 'residential',
@@ -152,5 +159,35 @@ class BillingFoundationTest extends TestCase
         $this->assertDatabaseHas('subscriber_services', [
             'public_id' => $service['public_id'], 'status' => 'active',
         ]);
+    }
+
+    private function enableSubscriberSync(): void
+    {
+        $external = new \PDO('sqlite::memory:');
+        $external->exec('CREATE TABLE isp_subscribers (username VARCHAR(64) PRIMARY KEY, status VARCHAR(16) NOT NULL, expires_at DATETIME NULL, plan VARCHAR(64) NOT NULL)');
+        $external->exec('CREATE TABLE radcheck (username VARCHAR(64) NOT NULL, attribute VARCHAR(64) NOT NULL, op VARCHAR(2) NOT NULL, value VARCHAR(255) NOT NULL)');
+
+        $bng = Bng::create([
+            'name' => 'Test BNG',
+            'vendor' => 'linux',
+            'model' => 'Accel-PPP',
+            'management_endpoint' => '10.0.0.10',
+            'preferred_transport' => 'ssh',
+            'status' => 'active',
+        ]);
+        BngRadiusServer::create([
+            'bng_id' => $bng->id,
+            'name' => 'Test RADIUS',
+            'server_address' => '10.0.0.20',
+            'secret' => 'secret',
+            'database_name' => 'radius',
+            'database_username' => 'radius',
+            'database_password' => 'secret',
+            'auth_port' => 1812,
+            'accounting_port' => 1813,
+            'status' => 'ready',
+            'sync_subscribers' => true,
+        ]);
+        app()->instance(RadiusSubscriberSyncService::class, new RadiusSubscriberSyncService(fn () => $external));
     }
 }

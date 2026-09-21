@@ -52,6 +52,7 @@ class RadiusSubscriberSyncApiTest extends TestCase
     {
         $external = new PDO('sqlite::memory:');
         $external->exec('CREATE TABLE isp_subscribers (username VARCHAR(64) PRIMARY KEY, status VARCHAR(16) NOT NULL, expires_at DATETIME NULL, plan VARCHAR(64) NOT NULL)');
+        $external->exec('CREATE TABLE radcheck (username VARCHAR(64) NOT NULL, attribute VARCHAR(64) NOT NULL, op VARCHAR(2) NOT NULL, value VARCHAR(255) NOT NULL)');
         $this->radiusServer($this->bng(), true);
         app()->instance(RadiusSubscriberSyncService::class, new RadiusSubscriberSyncService(fn () => $external));
 
@@ -66,6 +67,20 @@ class RadiusSubscriberSyncApiTest extends TestCase
         ])->assertCreated();
 
         $this->assertSame('ppp-user', $external->query('SELECT username FROM isp_subscribers')->fetchColumn());
+    }
+
+    public function test_customer_creation_is_rejected_without_an_enabled_subscriber_sync_server(): void
+    {
+        $response = $this->actingAs(User::factory()->create(), 'sanctum')->postJson('/api/v1/customers', [
+            'customer_type' => 'residential',
+            'legal_name' => 'Blocked Subscriber',
+            'ppp_username' => 'blocked-user',
+            'ppp_password' => 'blocked-secret',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['radius']);
+        $this->assertDatabaseMissing('customers', ['legal_name' => 'Blocked Subscriber']);
     }
 
     private function bng(): Bng

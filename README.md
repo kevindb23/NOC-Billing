@@ -9,7 +9,10 @@ Use the single bootstrap installer below on a fresh Ubuntu 22.04/24.04 LTS serve
 ### 1. Run the bootstrap installer
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/kevindb23/NOC-Billing/main/deploy/bootstrap-ubuntu.sh | sudo bash
+wget -qO /tmp/noc-billing-bootstrap.sh https://raw.githubusercontent.com/kevindb23/NOC-Billing/main/deploy/bootstrap-ubuntu.sh
+sudo env DB_PASSWORD='replace-with-db-password' ADMIN_PASSWORD='replace-with-admin-password' \
+  bash /tmp/noc-billing-bootstrap.sh
+rm -f /tmp/noc-billing-bootstrap.sh
 ```
 
 The installer will:
@@ -24,7 +27,7 @@ The installer will:
 - Install and enable all application services.
 - Verify that the API and frontend are accessible before reporting success.
 
-The script prompts for the MySQL password for the `noc_billing` user. Use a strong password and keep it available for the Laravel `.env` configuration.
+The installer is non-interactive. `DB_NAME`, `DB_USER`, `DB_HOST`, `ADMIN_NAME`, and `ADMIN_EMAIL` have safe defaults; `DB_PASSWORD` and `ADMIN_PASSWORD` must be supplied at runtime and are never stored in this public repository. You can override any of these variables with `sudo env` before the script path.
 
 ### 2. Open the application
 

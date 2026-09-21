@@ -13,7 +13,6 @@ log() { echo; echo "==> $*"; }
 check() { echo "[OK] $*"; }
 [[ "$(id -u)" == 0 ]] || die "Run as root."
 cd /
-[[ -r /dev/tty ]] || die "An interactive terminal is required for the setup wizard."
 
 export DEBIAN_FRONTEND=noninteractive
 if [[ -z "${PHP_VERSION}" ]]; then
@@ -42,26 +41,15 @@ node_major="$(node -p 'process.versions.node.split(".")[0]')"
 [[ "${node_major}" -ge 20 ]] || die "Node.js 20 or newer is required; found $(node --version)."
 systemctl enable --now mysql redis-server "php${PHP_VERSION}-fpm" nginx
 
-echo
-echo "Northstar first-install setup wizard"
-DB_NAME=""
-DB_USER=""
-DB_HOST=""
-DB_PASSWORD=""
-ADMIN_NAME=""
-ADMIN_EMAIL=""
-ADMIN_PASSWORD=""
-ADMIN_PASSWORD_CONFIRM=""
-read -r -p "Database name [noc_billing]: " DB_NAME < /dev/tty; DB_NAME="${DB_NAME:-noc_billing}"
-read -r -p "Database user [noc_billing]: " DB_USER < /dev/tty; DB_USER="${DB_USER:-noc_billing}"
-read -r -p "Database host [127.0.0.1]: " DB_HOST < /dev/tty; DB_HOST="${DB_HOST:-127.0.0.1}"
-read -r -s -p "Database password: " DB_PASSWORD < /dev/tty; echo
-[[ -n "${DB_PASSWORD}" ]] || die "Database password cannot be empty."
-read -r -p "Super-admin name [Billing Administrator]: " ADMIN_NAME < /dev/tty; ADMIN_NAME="${ADMIN_NAME:-Billing Administrator}"
-read -r -p "Super-admin email [admin@example.com]: " ADMIN_EMAIL < /dev/tty; ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
-read -r -s -p "Super-admin password: " ADMIN_PASSWORD < /dev/tty; echo
-read -r -s -p "Confirm super-admin password: " ADMIN_PASSWORD_CONFIRM < /dev/tty; echo
-[[ -n "${ADMIN_PASSWORD}" && "${ADMIN_PASSWORD}" == "${ADMIN_PASSWORD_CONFIRM}" ]] || die "Super-admin password is empty or does not match."
+DB_NAME="${DB_NAME:-noc_billing}"
+DB_USER="${DB_USER:-noc_billing}"
+DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_PASSWORD="${DB_PASSWORD:-}"
+ADMIN_NAME="${ADMIN_NAME:-admin}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+[[ -n "${DB_PASSWORD}" ]] || die "Set DB_PASSWORD before running the installer."
+[[ -n "${ADMIN_PASSWORD}" ]] || die "Set ADMIN_PASSWORD before running the installer."
 
 log "Checking out the application"
 if [[ -d "${APP_ROOT}/.git" ]]; then
@@ -116,8 +104,11 @@ cd "${APP_ROOT}/backend"
 [[ -f .env ]] || cp .env.example .env
 set_env() {
   local key="$1" value="$2" temp
+  local escaped="${value//\\/\\\\}"
+  escaped="${escaped//\"/\\\"}"
   temp="$(mktemp)"
-  awk -v key="$key" -v value="$value" 'index($0, key"=") == 1 { print key"="value; found=1; next } { print } END { if (!found) print key"="value }' .env > "$temp"
+  awk -v key="$key" 'index($0, key"=") != 1 { print }' .env > "$temp"
+  printf '%s="%s"\n' "$key" "$escaped" >> "$temp"
   install -m 0600 "$temp" .env
   rm -f "$temp"
 }
